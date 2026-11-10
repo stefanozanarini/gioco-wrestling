@@ -1,0 +1,22 @@
+# BWT sulla VPS condivisa (stessa di basket e bicio-F1).
+# Richiede il proxy condiviso già avviato (nginx-proxy + acme-companion sulla rete docker "proxy"):
+# il dominio e il certificato HTTPS vengono configurati da soli, WebSocket del multiplayer compresi.
+# Avvio sulla VPS:  cd /opt/bwt-wrestling && docker compose -f docker-compose.vps.yml up -d --build
+name: bwt-wrestling
+
+services:
+  bwt-wrestling:
+    build: .
+    image: bwt-wrestling:latest
+    container_name: bwt-wrestling
+    restart: unless-stopped
+    environment:
+      VIRTUAL_HOST: ${DOMAIN:?Imposta DOMAIN nel file .env}
+      VIRTUAL_PORT: "8080"
+      LETSENCRYPT_HOST: ${DOMAIN}
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

@@ -1,0 +1,29 @@
+{
+ "trucker": {
+  "skinTint": "#cedaff"
+ },
+ "guido": {
+  "skinTint": "#e9deff"
+ },
+ "nico": {
+  "skinTint": "#d4d6ff"
+ },
+ "jason": {
+  "skinTint": "#bec1ff"
+ },
+ "dozer": {
+  "skinTint": "#cad5ff"
+ },
+ "zodiac": {
+  "skinTint": "#b3c7ff"
+ },
+ "lello": {
+  "skinTint": "#d0d3ff"
+ },
+ "malpensa": {
+  "skinTint": "#ddd5ff"
+ },
+ "rangoni": {
+  "skinTint": "#e4fffa"
+ }
+}

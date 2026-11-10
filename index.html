@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>BWT · Bologna Wrestling Team</title>
+  <meta name="theme-color" content="#0b0b14" />
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <div class="panel left" id="panel1">
+      <div class="name" id="name1">—</div>
+      <div class="bar hp"><i id="hp1"></i></div>
+      <div class="bar sp"><i id="sp1"></i><span>SPECIAL</span></div>
+    </div>
+    <div class="logo">BWT</div>
+    <div class="panel right" id="panel2">
+      <div class="name" id="name2">—</div>
+      <div class="bar hp"><i id="hp2"></i></div>
+      <div class="bar sp"><i id="sp2"></i><span>SPECIAL</span></div>
+    </div>
+  </div>
+
+  <div id="announce"></div>
+  <div id="count"></div>
+  <div id="kickbar" class="hidden"><div>LIBERATI! premi SPAZIO</div><b><i id="kickfill"></i></b></div>
+  <div id="prompt"></div>
+
+  <div id="help" class="hidden">
+    <b>Comandi</b>
+    <div><kbd>WASD</kbd>/<kbd>frecce</kbd> movimento · <kbd>Shift</kbd> corsa</div>
+    <div><kbd>J</kbd> pugno · <kbd>K</kbd> calcio · <kbd>L</kbd> presa · <kbd>I</kbd> parata</div>
+    <div>In presa: <kbd>J</kbd> suplex · <kbd>K</kbd> body slam · <kbd>L</kbd> irish whip · <kbd>F</kbd> finisher</div>
+    <div><kbd>Spazio</kbd> schienamento / liberarsi · <kbd>E</kbd> provoca il pubblico</div>
+    <div><kbd>H</kbd> nascondi comandi · <kbd>Esc</kbd> pausa</div>
+  </div>
+
+  <!-- comandi a schermo (solo dispositivi touch): joystick a sinistra, pulsanti a destra -->
+  <div id="touch" class="hidden">
+    <div id="joy-zone"><div id="joy-base"><div id="joy-knob"></div></div></div>
+    <button class="tpause" data-key="Escape" aria-label="Pausa">❚❚</button>
+    <div class="tbtns">
+      <button class="t-taunt" data-key="KeyE"><b>PROVOCA</b><i>E</i></button>
+      <button class="t-fin" data-key="KeyF"><b>FINISHER</b><i>F</i></button>
+      <button class="t-block" data-key="KeyI"><b>PARATA</b><i>I</i></button>
+      <button class="t-grab" data-key="KeyL"><b>PRESA</b><b class="alt">WHIP</b><i>L</i></button>
+      <button class="t-kick" data-key="KeyK"><b>CALCIO</b><b class="alt">SLAM</b><i>K</i></button>
+      <button class="t-punch" data-key="KeyJ"><b>PUGNO</b><b class="alt">SUPLEX</b><i>J</i></button>
+      <button class="t-pin" data-key="Space"><b>SCHIENA · LIBERATI</b><i>SPAZIO</i></button>
+    </div>
+  </div>
+  <div id="rotate">Ruota il telefono in orizzontale 🔄</div>
+
+  <div id="overlay"></div>
+  <div id="netnote"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

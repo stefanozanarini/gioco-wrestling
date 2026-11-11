@@ -18,18 +18,26 @@ SKIN_TEX = ROOT / 'public' / 'models' / 'quaternius' / 'T_Superhero_Male_Ligh.jp
 # nome: (x occhi, y occhi, distanza tra le pupille) in pixel della foto originale
 EYES = {
     'trucker': (141, 48, 26), 'guido': (135.5, 58, 19), 'nico': (138, 58, 22), 'jason': (130, 56, 25),
-    'dozer': (131.5, 67, 13), 'zodiac': (147, 66, 20), 'lello': (138, 52, 22),
+    'dozer': (131.5, 67, 13), 'zodiac': (147, 66, 20),
     'malpensa': (91, 80, 30), 'rangoni': (129, 32, 13),
     'mosquito': (147.5, 196, 75),   # maschera: centri dei fori degli occhi
+    'leonardo': (102.6, 71, 70),    # nell'immagine frontale ricostruita (vedi MIRROR)
 }
+# foto di tre quarti: si prende la metà del viso ben visibile (da x0 alla linea del naso xm, righe y0..y1),
+# la si allarga di k per compensare la rotazione e la si specchia, ottenendo un viso frontale
+MIRROR = {'leonardo': (236, 312, 40, 240, 1.35)}
+# luci colorate sul viso (palazzetto): correzione per canale R, G, B
+COLOR_FIX = {'leonardo': (1.05, 1.08, 0.86)}
 # volti coperti da una maschera: la tinta della pelle si prende da questo riquadro (petto) invece che da fronte e guance
 SKIN_BOX = {'mosquito': (95, 440, 185, 500)}
 # foto con cappellino: la parte alta del ritaglio (fronte) si sfuma, sopra ci sono i capelli del modello (0..1 = quanta altezza)
-TOP_FADE = {'lello': 0.42}
+TOP_FADE = {'leonardo': 0.4}
 # volto ingrandito sul modello (il disegno della maschera copre tutta la testa)
 FACE_SCALE = {'mosquito': 1.4}
 # sopracciglia folte o espressione accigliata: sul modello diventano strisce scure, si schiariscono verso la pelle (0..1)
 SOFT_BROWS = {'jason': 0.7, 'zodiac': 0.65}
+# ombre sul mento (sembrerebbero barba): si schiariscono verso la pelle sotto la bocca (0..1)
+SOFT_CHIN = {'leonardo': 0.85}
 # ritaglio in multipli della distanza tra le pupille (stessi valori nello shader: FACE_W, FACE_H, FACE_EYE)
 FACE_W, FACE_H, FACE_EYE = 2.6, 2.8, 1.2
 W, H = 128, 138
@@ -45,6 +53,15 @@ def mean_rgb(im, box):
 def smooth(a, b, x):
     t = min(1.0, max(0.0, (x - a) / (b - a)))
     return t * t * (3 - 2 * t)
+
+
+def mirror_face(im, x0, xm, y0, y1, k):
+    half = im.crop((x0, y0, xm, y1))
+    half = half.resize((round(half.width * k), half.height), Image.LANCZOS)
+    out = Image.new('RGB', (half.width * 2, half.height))
+    out.paste(half, (0, 0))
+    out.paste(half.transpose(Image.FLIP_LEFT_RIGHT), (half.width, 0))
+    return out
 
 
 def soften_brows(face, skin, k):
@@ -64,6 +81,22 @@ def soften_brows(face, skin, k):
                 px[x, y] = tuple(round(c + (s - c) * t) for c, s in zip((r, g, b), skin))
 
 
+def soften_chin(face, skin, k):
+    """Schiarisce i pixel scuri sotto la bocca (mento e mascella), con bordo sfumato."""
+    px = face.load()
+    ipd = W / FACE_W
+    ey = H * FACE_EYE / FACE_H
+    skin_l = sum(skin) / 3
+    for y in range(int(ey + 0.85 * ipd), H):
+        wy = smooth(0.85, 1.05, (y - ey) / ipd)
+        for x in range(W):
+            r, g, b = px[x, y]
+            dark = min(1.0, max(0.0, (skin_l - (r + g + b) / 3) / (skin_l * 0.5)))
+            t = k * wy * dark
+            if t > 0:
+                px[x, y] = tuple(round(c + (s - c) * t) for c, s in zip((r, g, b), skin))
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -79,6 +112,10 @@ def main():
         if not src:
             continue
         im = Image.open(src).convert('RGB')
+        if name in MIRROR:
+            im = mirror_face(im, *MIRROR[name])
+        if name in COLOR_FIX:
+            im = Image.merge('RGB', [ch.point(lambda v, f=f: min(255, round(v * f))) for ch, f in zip(im.split(), COLOR_FIX[name])])
         box = (ex - FACE_W / 2 * d, ey - FACE_EYE * d, ex + FACE_W / 2 * d, ey + (FACE_H - FACE_EYE) * d)
         face = im.crop(tuple(round(v) for v in box)).resize((W, H), Image.LANCZOS)
         # colore della pelle: fronte e guance
@@ -102,6 +139,8 @@ def main():
                     r, g, b = px[x, y]
                     if r - b > 70:
                         px[x, y] = (12, 12, 14)
+        if name in SOFT_CHIN:
+            soften_chin(face, skin, SOFT_CHIN[name])
         if name in SOFT_BROWS:
             soften_brows(face, skin, SOFT_BROWS[name])
         alpha = mask

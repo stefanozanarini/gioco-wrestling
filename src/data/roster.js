@@ -54,7 +54,7 @@ export const ROSTER = [
     trunks: '#6a1fb0', trim: '#111111', boots: '#111111', pads: '#111111', tape: '#111111',
   },
   {
-    name: 'LEONARDO BULGARI JR', face: 'lello', nickname: 'The coolest kid in town', from: 'Bologna', height: 1.83, kg: 73, lean: true,
+    name: 'LEONARDO BULGARI JR', face: 'leonardo', nickname: 'The coolest kid in town', from: 'Bologna', height: 1.83, kg: 73, lean: true,
     lightSkin: true, skinTint: '#ffffff',
     hairStyle: 'corti', hair: '#3b2416', armband: '#111111',
     tights: true, trunks: '#1f5fd0', trim: '#1f5fd0', boots: '#f2f2f2', pads: '#1f5fd0', tape: null,

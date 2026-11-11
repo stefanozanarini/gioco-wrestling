@@ -17,9 +17,6 @@
  "zodiac": {
   "skinTint": "#b3c7ff"
  },
- "lello": {
-  "skinTint": "#d0d3ff"
- },
  "malpensa": {
   "skinTint": "#ddd5ff"
  },
@@ -29,5 +26,8 @@
  "mosquito": {
   "skinTint": "#ede2ff",
   "scale": 1.4
+ },
+ "leonardo": {
+  "skinTint": "#d1d6ff"
  }
 }

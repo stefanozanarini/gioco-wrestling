@@ -81,6 +81,8 @@ staff: Liam Rangoni (presentatore, annuncia il match sul ring e poi resta a bord
 - `lean: true` nel roster: fisico asciutto e poco muscoloso indipendentemente dal peso (Zodiac).
 - Liam Rangoni porta sempre il cappello da cowboy (`hat` nel roster).
 - Arbitro e staff hanno un fisico normale (`slim`): arbitro con camicia a righe, colletto e pantaloni lunghi; staff in giacca e cravatta.
+  Il completo ha una giacca 3D vera (secondo strato del corpo, più largo, sullo stesso scheletro) con risvolti in raso, pantaloni larghi e scarpe.
+- Leonardo Bulgari Jr: fascia nera sul braccio (`armband`); dalla vecchia foto col cappellino la fronte è sfumata (`TOP_FADE` nello script dei volti).
 - Abbigliamento disponibile: slip o pantaloncini, calzamaglia (con arcobaleno o fiamme), canotta, body da lotta, completo con cravatta,
   stivali, ginocchiere, polsini, barba, cappellino, occhiali, maschera. Gli accappatoi e le giacche d'ingresso (Dozer, Zodiac, Nico) non ci sono ancora.
 

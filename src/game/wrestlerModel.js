@@ -249,7 +249,8 @@ const faceGLSL = (cond) => `
     }
   }`;
 
-function gearMaterial(src, models, look) {
+// shell: strato della giacca (completo), una copia del corpo un po' più larga che segue lo stesso scheletro
+function gearMaterial(src, models, look, shell = false) {
   const m = src.clone();
   if (look.lightSkin) m.map = models.lightSkin;
   m.color = new THREE.Color(look.skinTint ?? '#ffffff');
@@ -283,6 +284,8 @@ function gearMaterial(src, models, look) {
     // x: maschera, y: arbitro, z: nastro ai polsi, w: barba (lunghezza 0-1, 0 = niente)
     uFlags: { value: new THREE.Vector4(look.mask ? 1 : 0, look.isRef ? 1 : 0, look.tape ? 1 : 0, look.beard ? (look.beardLen ?? 0.5) + 0.01 : 0) },
     // x: tipo di maglia, y: calzamaglia, z: disegno della calzamaglia, w: lunghezza dei pantaloncini (0 slip, 1 lunghi)
+    uArmband: { value: col(look.armband) },
+    uArmbandOn: { value: look.armband ? 1 : 0 },
     uFlags2: { value: new THREE.Vector4(TOPS[top.kind] ?? 0, look.tights ? 1 : 0, PATTERNS[look.tightsPattern] ?? 0, look.trunksLen ?? 0) },
     uCapOn: { value: look.cap ? 1 : 0 },
     // x: occhiali, y: cravatta a righe
@@ -298,6 +301,7 @@ function gearMaterial(src, models, look) {
     uFace: { value: faceTex },
     uFaceOn: { value: faceTex ? 1 : 0 },
     uFaceScale: { value: face?.scale ?? 1 },
+    uShell: { value: shell ? 1 : 0 },
   };
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
@@ -305,7 +309,7 @@ function gearMaterial(src, models, look) {
       .replace('#include <common>', `#include <common>
 varying vec3 vRest; varying vec3 vRestN;
 attribute float aArm;
-uniform mat3 uBasis; uniform vec4 uBuild; uniform vec4 uY; uniform vec4 uY2; uniform float uChest; uniform float uArmX; uniform vec3 uHand;`)
+uniform mat3 uBasis; uniform vec4 uBuild; uniform vec4 uY; uniform vec4 uY2; uniform float uChest; uniform float uArmX; uniform vec3 uHand; uniform float uShell;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
 vRest = position;
 vRestN = uBasis * normal;
@@ -323,6 +327,15 @@ vRestN = uBasis * normal;
   float legs = (1.0 - smoothstep(uY2.x - 0.06, uY2.x + 0.04, q.y)) * smoothstep(uY.x + 0.02, uY.x + 0.1, q.y);
   float notArm = 1.0 - smoothstep(0.1, 0.6, aArm);
   transformed += objectNormal * (uBuild.x * body + (uBuild.y * belly + uBuild.z * torso) * notArm + uBuild.w * legs);
+  if (uShell > 0.5) {
+    // giacca: stoffa staccata dal corpo, spalle imbottite, falde che si allargano sui fianchi
+    float shoulder = exp(-pow((q.y - (uY.w - 0.07)) / 0.07, 2.0)) * smoothstep(uArmX * 0.45, uArmX * 0.9, abs(q.x));
+    float flare = (1.0 - smoothstep(uY2.x - 0.12, uY2.x + 0.12, q.y)) * notArm;
+    // pantaloni larghi e dritti: più staccati dalla gamba verso la caviglia
+    float trousers = (1.0 - smoothstep(uY2.x - 0.1, uY2.x - 0.02, q.y)) * (0.016 + 0.018 * (1.0 - smoothstep(uY.x + 0.06, uY.y + 0.1, q.y)));
+    trousers *= smoothstep(uY.x - 0.02, uY.x + 0.04, q.y);
+    transformed += objectNormal * ((0.02 + 0.008 * shoulder + 0.02 * flare) * smoothstep(uY2.x - 0.1, uY2.x - 0.06, q.y) + trousers);
+  }
 }`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -331,7 +344,8 @@ uniform sampler2D uFace; uniform float uFaceOn; uniform float uFaceScale;
 uniform mat3 uBasis; uniform vec3 uTrunks; uniform vec3 uTrim; uniform vec3 uBoots; uniform vec3 uPads;
 uniform vec3 uTape; uniform vec3 uMask; uniform vec3 uMaskTrim; uniform vec3 uBeard; uniform vec3 uCap;
 uniform vec3 uTop; uniform vec3 uTop2; uniform vec3 uTop3; uniform vec4 uFlags; uniform vec4 uFlags2; uniform float uCapOn; uniform vec4 uExtra;
-uniform float uArmX; uniform float uHeadZ; uniform float uChest;
+uniform float uArmX; uniform float uHeadZ; uniform float uChest; uniform float uShell;
+uniform vec3 uArmband; uniform float uArmbandOn;
 uniform vec4 uY; uniform vec4 uY2; uniform vec3 uHand; uniform vec3 uArmDir;
 float cloth = 0.0;
 float shoe = 0.0;   // scarpe: nere e opache (sotto il faro il nero lucido sembrerebbe pelle)
@@ -393,8 +407,8 @@ vec3 rainbow(float t) {
     bool torso = ax < max(uArmX * 1.05, xThigh + 0.2) && p.y > hem && p.y < yNeck - 0.01 && (ax < uArmX * 1.05 || p.y < yPelvis);
     if (sleeve || torso) {
       col = uTop; cloth = 1.0;
-      float sy = uChest - 0.2;
-      float vee = 0.02 + (p.y - sy) * 0.55;                     // scollo della giacca, ampio
+      float sy = uChest - 0.17;
+      float vee = 0.02 + (p.y - sy) * 0.4;                     // scollo della giacca, ampio
       if (torso && p.z > 0.0 && p.y > sy && ax < vee) {
         col = uTop2;
         if (p.y > yNeck - 0.045 && ax > 0.03) col = mix(uTop2, vec3(0.6), 0.25);   // colletto della camicia
@@ -404,7 +418,7 @@ vec3 rainbow(float t) {
           if (uExtra.y > 0.5 && mod(floor((p.y - p.x) * 60.0), 2.0) < 1.0) col = mix(uTop3, vec3(0.9, 0.85, 0.75), 0.55);
         }
       } else if (torso && p.z > 0.0 && p.y > sy - 0.03 && ax < vee + 0.045) {
-        col = uTop * 0.55;                                       // risvolti più scuri, ben visibili
+        col = uTop * 0.55;                   // risvolti in raso nero, bordino chiaro più scuri, ben visibili
       }
       if (torso && p.z > 0.0 && p.y < sy && ax < 0.004) col = uTop * 0.4;   // chiusura della giacca
       // sotto l'ultimo bottone la giacca si apre: si vedono i pantaloni
@@ -434,6 +448,8 @@ vec3 rainbow(float t) {
       }
     }
   }
+  // fascia nera a metà del braccio sinistro
+  if (uArmbandOn > 0.5 && p.x > 0.0 && along < -(uExtra.z + 0.06) && along > -(uExtra.z + 0.11) && length(hp - uArmDir * along) < 0.09) { col = uArmband; cloth = 1.0; }
   // nastro ai polsi
   if (uFlags.z > 0.5 && along < -0.005 && along > -0.12 && length(hp - uArmDir * along) < 0.075) { col = uTape; cloth = 1.0; }
   // arbitro: camicia a righe verticali con maniche corte e colletto nero, cintura, pantaloni lunghi e scarpe nere
@@ -483,11 +499,36 @@ vec3 rainbow(float t) {
     if (uFaceOn < 0.5 && ax < 0.012 && p.y > eyeY + 0.03) col = uMaskTrim;
   }
   ${faceGLSL('uFlags.x > 0.5')}
+  if (uShell > 0.5) {
+    // strato della giacca: solo tronco e maniche (aperto davanti sulla camicia), sotto i pantaloni larghi
+    float hem = yPelvis - 0.06;
+    bool sleeve = ax > uArmX * 0.75 && along < -0.035 && p.y > yWaist;
+    bool torso = ax < uArmX * 1.05 && p.y > hem && p.y < yNeck - 0.01;
+    if (!(sleeve || torso)) {
+      if (!(leg && p.y > yFoot + 0.01)) discard;
+      col = uTrunks; cloth = 1.0;                                                  // pantaloni
+      if (p.z > 0.0 && abs(abs(p.x) - xThigh) < 0.003 && p.y < hem) col = uTrunks * 0.6;   // piega davanti
+      if (!gl_FrontFacing) col = uTrunks * 0.3;
+      diffuseColor.rgb = col;
+    } else {
+    float sy = uChest - 0.17;
+    float vee = 0.02 + (p.y - sy) * 0.4;
+    if (torso && p.z > 0.0 && p.y > sy && ax < vee) discard;
+    col = uTop; cloth = 1.0;
+    if (torso && p.z > 0.0 && p.y > sy - 0.035 && ax < vee + 0.045) col = p.y > sy + 0.01 && ax > vee + 0.038 ? vec3(0.35) : vec3(0.025);   // risvolti in raso nero, bordino chiaro
+    if (torso && p.z > 0.0 && p.y < sy && p.y > yPelvis && abs(ax - 0.012) < 0.008 && mod(p.y - sy, 0.08) < 0.016) col = vec3(0.03);   // bottoni
+    if (torso && p.z > 0.02 && abs(ax - 0.1) < 0.04 && abs(p.y - (yPelvis + 0.03)) < 0.006) col = uTop * 0.45;   // tasche
+    if (torso && p.x > 0.06 && p.x < 0.11 && p.z > 0.0 && p.y > uChest - 0.015 && p.y < uChest + 0.012) col = uTop2;   // fazzoletto
+    if (torso && p.y < hem + 0.01) col = uTop * 0.5;                                                          // orlo
+    if (!gl_FrontFacing) col = uTop * 0.3;                                                                    // fodera
+    }
+  }
   diffuseColor.rgb = col;
 }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.45, cloth), 1.0, shoe);');
   };
-  m.customProgramCacheKey = () => 'bwt-gear';
+  if (shell) m.side = THREE.DoubleSide;
+  m.customProgramCacheKey = () => (shell ? 'bwt-gear-shell' : 'bwt-gear');
   return m;
 }
 
@@ -518,6 +559,17 @@ export class WrestlerRig {
         o.visible = false;   // occhi del modello: sotto la maschera si vede il disegno della foto
       }
     });
+
+    // completo: giacca vera sopra il corpo (stessa geometria e stesso scheletro, un po' più larga)
+    if (look.top?.kind === 'completo') {
+      let body = null;
+      inst.traverse((o) => { if (o.name === models.body.name) body = o; });
+      const jacket = new THREE.SkinnedMesh(body.geometry, gearMaterial(body.material, models, look, true));
+      jacket.bind(body.skeleton, body.bindMatrix);
+      jacket.castShadow = true;
+      jacket.frustumCulled = false;
+      body.parent.add(jacket);
+    }
 
     this.bulk = look.slim || look.lean ? SLIM_BONES : BULK_BONES;
     this.bones = {};

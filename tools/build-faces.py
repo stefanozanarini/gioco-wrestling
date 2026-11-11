@@ -8,7 +8,7 @@ Uso: python3 tools/build-faces.py
 """
 import json
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'public' / 'foto'
@@ -24,6 +24,8 @@ EYES = {
 }
 # volti coperti da una maschera: la tinta della pelle si prende da questo riquadro (petto) invece che da fronte e guance
 SKIN_BOX = {'mosquito': (95, 440, 185, 500)}
+# foto con cappellino: la parte alta del ritaglio (fronte) si sfuma, sopra ci sono i capelli del modello (0..1 = quanta altezza)
+TOP_FADE = {'lello': 0.42}
 # volto ingrandito sul modello (il disegno della maschera copre tutta la testa)
 FACE_SCALE = {'mosquito': 1.4}
 # sopracciglia folte o espressione accigliata: sul modello diventano strisce scure, si schiariscono verso la pelle (0..1)
@@ -102,7 +104,11 @@ def main():
                         px[x, y] = (12, 12, 14)
         if name in SOFT_BROWS:
             soften_brows(face, skin, SOFT_BROWS[name])
-        face.putalpha(mask)
+        alpha = mask
+        if name in TOP_FADE:
+            fade = Image.linear_gradient('L').resize((W, H)).point(lambda v, t=TOP_FADE[name]: min(255, round(v / (255 * t) * 255)) if t else 255)
+            alpha = ImageChops.multiply(mask, fade)
+        face.putalpha(alpha)
         face.save(OUT / f'{name}.png')
         # la tinta moltiplica la texture della pelle del modello: si normalizza sul canale più chiaro
         tint = [skin[i] / tex_mean[i] for i in range(3)]

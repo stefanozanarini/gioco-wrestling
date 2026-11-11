@@ -8,7 +8,7 @@
 //   top           { kind: 'canotta' | 'body' | 'completo', color, trim, color3, tieStripes }
 //   boots, pads, tape (nastro/polsini, null = niente), beard + beardLen, cap, glasses, mask
 //   hairStyle     'corti' | 'medi' | 'lunghi' | null (calvo); headband: fascia sulla fronte (colore)
-//   hat           cappello da cowboy (colore)
+//   hat           cappello da cowboy (colore); armband: fascia sul braccio sinistro (colore)
 //   mask          maschera (colore): con face il disegno della maschera viene dalla foto; antennae: antenne (colore)
 //   lean          fisico asciutto e poco muscoloso (altrimenti la corporatura viene dal peso)
 //   face          volto dalla foto in public/foto/ (vedi tools/build-faces.py)
@@ -54,10 +54,9 @@ export const ROSTER = [
     trunks: '#6a1fb0', trim: '#111111', boots: '#111111', pads: '#111111', tape: '#111111',
   },
   {
-    name: 'LEONARDO BULGARI JR', face: 'lello', nickname: 'The coolest kid in town', from: 'Bologna', height: 1.83, kg: 73,
+    name: 'LEONARDO BULGARI JR', face: 'lello', nickname: 'The coolest kid in town', from: 'Bologna', height: 1.83, kg: 73, lean: true,
     lightSkin: true, skinTint: '#ffffff',
-    hairStyle: null, hair: '#2a1a10', cap: '#151515',
-    top: { kind: 'canotta', color: '#f2f2f2', trim: '#3a3a3a' },
+    hairStyle: 'corti', hair: '#3b2416', armband: '#111111',
     tights: true, trunks: '#1f5fd0', trim: '#1f5fd0', boots: '#f2f2f2', pads: '#1f5fd0', tape: null,
   },
   {

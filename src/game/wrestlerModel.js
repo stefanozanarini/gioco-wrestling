@@ -111,6 +111,23 @@ export async function loadWrestlerModels() {
   hatRef.fwd = fwd.clone().transformDirection(body.matrixWorld);
   hatRef.k = new THREE.Vector3(1, 0, 0).applyMatrix4(body.matrixWorld).sub(new THREE.Vector3().applyMatrix4(body.matrixWorld)).length();
 
+  // giacca rigida (completo): sezione del tronco a varie altezze, braccia escluse, nel sistema del corpo
+  const jacketRings = [];
+  {
+    const pos = body.geometry.attributes.position, arm = body.geometry.attributes.aArm;
+    const pts = [];
+    for (let i = 0; i < pos.count; i++) if (arm.getX(i) < 0.15) pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix3(basis));
+    const yHem = L.pelvis.y - 0.15, yTop = L.neck.y - 0.03;
+    for (let k = 0; k <= 14; k++) {
+      const y = yHem + ((yTop - yHem) * k) / 14;
+      let ax = 0, zf = -1, zb = 1;
+      for (const p of pts) if (Math.abs(p.y - y) < 0.025) { ax = Math.max(ax, Math.abs(p.x)); zf = Math.max(zf, p.z); zb = Math.min(zb, p.z); }
+      jacketRings.push({ y, ax, zf, zb });
+    }
+  }
+  // dal sistema del corpo allo spazio del mondo (a riposo)
+  const bodyToWorld = new THREE.Matrix4().setFromMatrix3(basis.clone().transpose()).premultiply(body.matrixWorld);
+
   const box = new THREE.Box3().setFromObject(scene, true);
   const height = box.max.y - box.min.y;
   // misure reali (m) dello scheletro, per altezza dei fianchi e lunghezza delle gambe
@@ -131,6 +148,7 @@ export async function loadWrestlerModels() {
     scene, clips, body, basis, L, eye, metric, height, groundOffset: box.min.y,
     hairs: hairs.map((h) => h.scene), lightSkin, faces, hatRef,
     headRestInv: bone('Head').matrixWorld.clone().invert(),
+    jacketRings, bodyToWorld, spineRestInv: bone('spine_02').matrixWorld.clone().invert(),
   };
 }
 
@@ -147,6 +165,53 @@ function trimBangs(m, cut = 0) {
       .replace('void main() {', `void main() {\n  if ((vHairP.z > 0.01 && abs(vHairP.x) < 0.098 && vHairP.y < 1.75) || vHairP.y < ${cut.toFixed(3)}) discard;`);
   };
   m.customProgramCacheKey = () => `bwt-hair-long-${cut}`;
+}
+
+// giacca rigida e squadrata (completo): tubo dal collo a sotto i fianchi, spalle dritte, aperta davanti sulla camicia
+// fino al bottone, risvolti in raso scuro. Costruita nel sistema del corpo (x sinistra, y su, z avanti).
+function jacketMesh(models, color) {
+  const { L, jacketRings } = models;
+  const shoulderX = Math.abs(L.armL.x) + 0.035;
+  const yBtn = L.spine1.y + 0.02, yV = L.spine3.y - 0.17, yHem = jacketRings[0].y;
+  const rings = jacketRings.map((r, i) => {
+    const sh = THREE.MathUtils.smoothstep(r.y, L.spine3.y - 0.05, L.spine3.y + 0.08);   // spalle imbottite
+    const flare = THREE.MathUtils.smoothstep(r.y, L.pelvis.y + 0.05, yHem) * 0.03;      // falde
+    return { y: r.y, ax: Math.max(r.ax + 0.045 + flare, shoulderX * sh), zf: r.zf + 0.04 + flare, zb: r.zb - 0.04 - flare * 0.5, last: i === jacketRings.length - 1 };
+  });
+  const top = rings[rings.length - 1];
+  rings.push({ y: top.y + 0.035, ax: 0.085, zf: top.zf - 0.03, zb: top.zb + 0.02 });   // colletto attorno al collo
+  const N = 48, n = 3;   // colonne, esponente della superellisse (sezione squadrata)
+  const sp = (v) => Math.sign(v) * Math.abs(v) ** (2 / n);
+  const base = new THREE.Color(color), lapel = new THREE.Color(0x0b0b0e), hem = base.clone().multiplyScalar(0.55);
+  const P = [], C = [], I = [];
+  rings.forEach((r, i) => {
+    // mezza apertura davanti (angolo): a V sopra il bottone, appena socchiusa sotto
+    const vee = 0.02 + Math.max(0, r.y - yV) * 0.4;
+    let g = r.y > yBtn ? Math.max(0.06, Math.asin(Math.min(0.95, vee / r.ax))) : 0.06 + 0.22 * (yBtn - r.y) / (yBtn - yHem);
+    if (i === rings.length - 1) g = rings[i - 1].g;
+    r.g = g;
+    const zc = (r.zf + r.zb) / 2, b = (r.zf - r.zb) / 2;
+    for (let j = 0; j <= N; j++) {
+      const phi = g + ((Math.PI * 2 - 2 * g) * j) / N;
+      P.push(r.ax * sp(Math.sin(phi)), r.y, zc + b * sp(Math.cos(phi)));
+      const nearEdge = Math.min(phi - g, Math.PI * 2 - g - phi) < 0.3 && r.y > yBtn - 0.02;
+      (nearEdge ? lapel : i === 0 ? hem : base).toArray(C, C.length);
+    }
+  });
+  for (let i = 0; i < rings.length - 1; i++) {
+    for (let j = 0; j < N; j++) {
+      const a = i * (N + 1) + j, c = a + N + 1;
+      I.push(a, c, a + 1, a + 1, c, c + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+  geo.setIndex(I);
+  geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, side: THREE.DoubleSide }));
+  mesh.castShadow = true;
+  return mesh;
 }
 
 // fascia sulla fronte (Guido), con l'origine sulla linea degli occhi
@@ -503,7 +568,7 @@ vec3 rainbow(float t) {
     // strato della giacca: solo tronco e maniche (aperto davanti sulla camicia), sotto i pantaloni larghi
     float hem = yPelvis - 0.06;
     bool sleeve = ax > uArmX * 0.75 && along < -0.035 && p.y > yWaist;
-    bool torso = ax < uArmX * 1.05 && p.y > hem && p.y < yNeck - 0.01;
+    bool torso = false;   // il busto è la giacca rigida (jacketMesh)
     if (!(sleeve || torso)) {
       if (!(leg && p.y > yFoot + 0.01)) discard;
       col = uTrunks; cloth = 1.0;                                                  // pantaloni
@@ -564,11 +629,18 @@ export class WrestlerRig {
     if (look.top?.kind === 'completo') {
       let body = null;
       inst.traverse((o) => { if (o.name === models.body.name) body = o; });
-      const jacket = new THREE.SkinnedMesh(body.geometry, gearMaterial(body.material, models, look, true));
-      jacket.bind(body.skeleton, body.bindMatrix);
-      jacket.castShadow = true;
-      jacket.frustumCulled = false;
-      body.parent.add(jacket);
+      // maniche e pantaloni larghi: strato del corpo più largo sullo stesso scheletro
+      const loose = new THREE.SkinnedMesh(body.geometry, gearMaterial(body.material, models, look, true));
+      loose.bind(body.skeleton, body.bindMatrix);
+      loose.castShadow = true;
+      loose.frustumCulled = false;
+      body.parent.add(loose);
+      // busto della giacca: rigido, segue la schiena
+      const frame = new THREE.Group();
+      frame.matrixAutoUpdate = false;
+      frame.matrix.copy(models.spineRestInv).multiply(models.bodyToWorld);
+      frame.add(jacketMesh(models, look.top.color));
+      inst.getObjectByName('spine_02')?.add(frame);
     }
 
     this.bulk = look.slim || look.lean ? SLIM_BONES : BULK_BONES;

@@ -21,11 +21,11 @@ EYES = {
     'dozer': (131.5, 67, 13), 'zodiac': (147, 66, 20),
     'malpensa': (91, 80, 30), 'rangoni': (129, 32, 13),
     'mosquito': (147.5, 196, 75),   # maschera: centri dei fori degli occhi
-    'leonardo': (102.6, 71, 70),    # nell'immagine frontale ricostruita (vedi MIRROR)
+    'leonardo': (76, 71, 52),       # nell'immagine frontale ricostruita (vedi MIRROR)
 }
 # foto di tre quarti: si prende la metà del viso ben visibile (da x0 alla linea del naso xm, righe y0..y1),
 # la si allarga di k per compensare la rotazione e la si specchia, ottenendo un viso frontale
-MIRROR = {'leonardo': (236, 312, 40, 240, 1.35)}
+MIRROR = {'leonardo': (236, 312, 40, 240, 1.0)}
 # luci colorate sul viso (palazzetto): correzione per canale R, G, B
 COLOR_FIX = {'leonardo': (1.05, 1.08, 0.86)}
 # volti coperti da una maschera: la tinta della pelle si prende da questo riquadro (petto) invece che da fronte e guance

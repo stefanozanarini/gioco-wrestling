@@ -6,6 +6,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <title>BWT · Bologna Wrestling Team</title>
   <meta name="theme-color" content="#0b0b14" />
+  <link rel="icon" href="./img/logo.png" />
 </head>
 <body>
   <div id="game"></div>
@@ -15,17 +16,20 @@
       <div class="name" id="name1">—</div>
       <div class="bar hp"><i id="hp1"></i></div>
       <div class="bar sp"><i id="sp1"></i><span>SPECIAL</span></div>
+      <div class="mate hidden" id="mate1"><span id="name3"></span><div class="bar hp"><i id="hp3"></i></div></div>
     </div>
-    <div class="logo">BWT</div>
+    <div class="logo"><img src="./img/logo.png" alt="BWT"></div>
     <div class="panel right" id="panel2">
       <div class="name" id="name2">—</div>
       <div class="bar hp"><i id="hp2"></i></div>
       <div class="bar sp"><i id="sp2"></i><span>SPECIAL</span></div>
+      <div class="mate hidden" id="mate2"><span id="name4"></span><div class="bar hp"><i id="hp4"></i></div></div>
     </div>
   </div>
 
   <div id="announce"></div>
   <div id="count"></div>
+  <div id="ringout" class="hidden"></div>
   <div id="kickbar" class="hidden"><div>LIBERATI! premi SPAZIO</div><b><i id="kickfill"></i></b></div>
   <div id="prompt"></div>
 
@@ -35,6 +39,8 @@
     <div><kbd>J</kbd> pugno · <kbd>K</kbd> calcio · <kbd>L</kbd> presa · <kbd>I</kbd> parata</div>
     <div>In presa: <kbd>J</kbd> suplex · <kbd>K</kbd> body slam · <kbd>L</kbd> irish whip · <kbd>F</kbd> finisher</div>
     <div><kbd>Spazio</kbd> schienamento / liberarsi · <kbd>E</kbd> provoca il pubblico</div>
+    <div>Spingi contro le corde per uscire dal ring (e contro il bordo per rientrare, prima del 10)</div>
+    <div>Fuori dal ring: <kbd>L</kbd> prendi una sedia, <kbd>J</kbd> colpisci · body slam sui tavoli</div>
     <div><kbd>H</kbd> nascondi comandi · <kbd>Esc</kbd> pausa</div>
   </div>
 

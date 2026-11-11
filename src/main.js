@@ -1,6 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import { buildArena } from './game/arena.js';
+import { Props } from './game/props.js';
 import { Pipeline } from './game/graphics.js';
 import { loadWrestlerModels, WrestlerRig } from './game/wrestlerModel.js';
 import { Wrestler, MAT_Y } from './game/wrestler.js';
@@ -32,6 +33,7 @@ addEventListener('resize', () => {
 });
 
 const arena = buildArena(scene);
+const props = new Props(scene);
 const hud = new Hud();
 const sfx = new Sfx();
 const controls = new Controls();
@@ -42,36 +44,49 @@ const fx = {
 };
 let shake = 0, flash = 0;
 
+const LOGO = '<h1><img src="./img/logo.png" alt="BWT" draggable="false"></h1>';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const KEYS = ROSTER.map((_, i) => [`Digit${i + 1}`, `Numpad${i + 1}`]);
 const pressedPick = () => KEYS.findIndex((codes) => controls.wasPressed(...codes));
+
+// ruoli nella scelta: 1 contro 1 [tu, avversario]; 2 contro 2 [tu, compagno, avversario, suo compagno]
+const ROLES = { 1: ['TU', 'AVVERSARIO'], 2: ['TU', 'COMPAGNO', 'AVVERSARIO', 'AVVERSARIO'] };
+const ROLE_ASK = { 1: ['il tuo lottatore', "l'avversario"], 2: ['il tuo lottatore', 'il tuo compagno', 'il primo avversario', 'il secondo avversario'] };
 
 function card(r, i, cls = '', tag = '') {
   const stats = [`${Math.round(r.height * 100)} cm`, `${r.kg} kg`, r.from].filter(Boolean).join(' · ');
   const photo = portraits[i] ? `<img src="${portraits[i]}" alt="" draggable="false">` : '';
   return `<div class="card ${cls}" data-pick="${i}">${photo}<kbd>${i + 1}</kbd>${tag}<b>${esc(r.name)}</b><small>“${esc(r.nickname)}”</small><small>${esc(stats)}</small></div>`;
 }
+const sizeToggle = (size, act) => `<div class="modes">
+    <button class="btn ${size === 1 ? 'on' : ''}" data-act="${act}" data-size="1">1 contro 1</button>
+    <button class="btn ${size === 2 ? 'on' : ''}" data-act="${act}" data-size="2">2 contro 2</button> <kbd>T</kbd>
+  </div>`;
+
 function titleScreen() {
-  const step = pick == null
-    ? `Scegli il tuo lottatore: tocca una carta o premi 1–${ROSTER.length}`
-    : `Hai scelto ${esc(ROSTER[pick].name)}. Ora l'avversario: 1–${ROSTER.length} · INVIO a caso`;
+  const need = teamSize * 2;
+  const step = `Scegli ${ROLE_ASK[teamSize][picks.length]}: tocca una carta o premi 1–${ROSTER.length}${picks.length ? ' · INVIO a caso' : ''}`;
+  const tag = (i) => (picks.includes(i) ? `<em>${ROLES[teamSize][picks.indexOf(i)]}</em>` : '');
   return `<div>
-    <h1>BWT</h1><h2>Bologna Wrestling Team</h2>
+    ${LOGO}<h2>Bologna Wrestling Team</h2>
     ${titleNote ? `<p class="err">${esc(titleNote)}</p>` : ''}
-    <div class="pick">${ROSTER.map((r, i) => card(r, i, i === pick ? 'picked' : '')).join('')}</div>
-    <p class="blink">${step}</p>
-    ${pick != null ? '<p><button class="btn big" data-key="Enter">Avversario a caso</button></p>' : ''}
+    ${sizeToggle(teamSize, 'size')}
+    <div class="pick">${ROSTER.map((r, i) => card(r, i, picks.includes(i) ? (picks.indexOf(i) < teamSize ? 'picked' : 'taken') : '', tag(i))).join('')}</div>
+    <p class="blink">${picks.length < need ? step : ''}</p>
+    ${picks.length ? `<p><button class="btn big" data-key="Enter">${picks.length < teamSize ? 'Completa a caso' : 'Avversari a caso'}</button> ${keyBtn('Escape', 'Indietro', 'Esc', 'ghost')}</p>` : ''}
     <p><button class="btn" data-act="online">Gioca online con un amico <kbd>M</kbd></button></p>
   </div>`;
 }
 
-hud.overlay('<div><h1>BWT</h1><h2>Bologna Wrestling Team</h2><p>Caricamento lottatori…</p></div>');
+hud.overlay(`<div>${LOGO}<h2>Bologna Wrestling Team</h2><p>Caricamento lottatori…</p></div>`);
 
 // mode: loading | title | online (menu online, attese) | lobby (stanza) | play | paused (solo partita singola)
 let mode = 'loading';
-let wrestlers, ref, staff, match, ai, p1, p2;
+let wrestlers, ref, staff, match, p1, p2;
+let ais = new Map();   // lottatori guidati dal computer -> AI
 let me;                // lottatore guidato da questo schermo (p1, oppure p2 per l'ospite online)
-let pick = null;
+let teamSize = 1;      // 1 contro 1 o 2 contro 2
+let picks = [];        // scelte nella schermata iniziale (vedi ROLES)
 let titleNote = '';
 let endShown = false;  // schermata di fine incontro visibile
 let mpMenu = false;    // menu di pausa online (la partita non si ferma)
@@ -82,7 +97,7 @@ async function init() {
     models = await loadWrestlerModels();
   } catch (e) {
     console.error(e);
-    hud.overlay(`<div><h1>BWT</h1><p>Impossibile caricare i modelli 3D: ${esc(e.message)}</p></div>`);
+    hud.overlay(`<div>${LOGO}<p>Impossibile caricare i modelli 3D: ${esc(e.message)}</p></div>`);
     return;
   }
   const make = (look) => new Wrestler(new WrestlerRig(models, look), look);
@@ -91,7 +106,7 @@ async function init() {
   staff = { speaker: make(STAFF.speaker), boss: make(STAFF.boss) };
   for (const w of [...wrestlers, ref, staff.speaker, staff.boss]) scene.add(w.root);
   makePortraits();
-  if (import.meta.env.DEV) window.bwtAll = { wrestlers, ref, staff, camera, net, setMode: (m) => { mode = m; }, render: () => pipeline.render(), step: () => step(), portraits, makePortraits };
+  if (import.meta.env.DEV) window.bwtAll = { wrestlers, ref, staff, camera, net, props, setMode: (m) => { mode = m; }, render: () => pipeline.render(), step: () => step(), portraits, makePortraits };
   startFromUrl();
 }
 
@@ -149,16 +164,19 @@ function makePortraits(dist = 1.4, lift = -0.05) {
   renderer.setViewport(0, 0, innerWidth, innerHeight);
 }
 
-// sul ring restano solo i due lottatori del match (o della schermata iniziale)
-function showPair(a, b) {
-  wrestlers.forEach((w) => { w.root.visible = w === a || w === b; });
-  a.reset(-1.8, 0.9, Math.PI / 2);
-  b.reset(1.8, -0.9, -Math.PI / 2);
+// sul ring restano solo i lottatori del match (o della schermata iniziale): [squadra rossa, squadra blu]
+function showTeams(teams) {
+  const on = new Set(teams.flat());
+  wrestlers.forEach((w) => { w.root.visible = on.has(w); });
+  const spots = [[[-1.8, 0.9], [-2.4, -1.6]], [[1.8, -0.9], [2.4, 1.6]]];
+  teams.forEach((t, k) => t.forEach((w, j) => w.reset(...spots[k][j], k ? -Math.PI / 2 : Math.PI / 2)));
 }
 
-// ring delle schermate: i due lottatori, il presentatore al centro, il dirigente a bordo ring
-function stage(a, b) {
-  showPair(wrestlers[a], wrestlers[b]);
+// ring delle schermate: i lottatori scelti, il presentatore al centro, il dirigente a bordo ring
+function stage(teams) {
+  if (match) for (const w of match.fighters) if (w.carry) props.drop(w);
+  props.reset();
+  showTeams(teams.map((t) => t.map((i) => wrestlers[i])));
   ref.reset(0, -2.6, 0);
   staff.speaker.reset(0, 0.4, 0);
   staff.speaker.setState('announce');
@@ -168,52 +186,56 @@ function stage(a, b) {
 
 function toTitle(note = '') {
   mode = 'title';
-  pick = null;
+  picks = [];
+  stage([[0], [1]]);
   match = null;
   titleNote = note;
   endShown = mpMenu = false;
   hud.show(false);
-  stage(0, 1);
   hud.overlay(titleScreen());
 }
 
-function startMatch(a, b) {
+// teams: indici del roster [[rosso, compagno?], [blu, compagno?]]
+function startMatch(teams) {
   sfx.ensure();
-  p1 = wrestlers[a];
-  p2 = wrestlers[b];
-  showPair(p1, p2);
+  if (match) for (const w of match.fighters) if (w.carry) props.drop(w);
+  const T = teams.map((t) => t.map((i) => wrestlers[i]));
+  [[p1], [p2]] = T;
+  showTeams(T);
   const role = mp?.role;
   me = role === 'guest' ? p2 : p1;
   events.length = 0;
   if (role === 'guest') {
     // l'ospite non simula: la partita serve solo a tenere lo stato ricevuto dall'host
-    for (const w of [p1, p2, ref, staff.speaker, staff.boss]) w.net = null;
-    match = new Match({ p1, p2, ref, staff, hud: mute, sfx: mute, fx: mute });
+    for (const w of [...T.flat(), ref, staff.speaker, staff.boss]) w.net = null;
+    match = new Match({ teams: T, ref, staff, props, hud: mute, sfx: mute, fx: mute });
   } else if (role === 'host') {
     // l'host registra scritte, suoni e scosse per ripeterli sullo schermo dell'ospite
     match = new Match({
-      p1, p2, ref, staff, humans: [p1, p2],
-      hud: recorder(hud, 'hud', ['announce', 'count'], events),
+      teams: T, ref, staff, props, humans: [p1, p2],
+      hud: recorder(hud, 'hud', ['announce', 'count', 'ringOut'], events),
       sfx: recorder(sfx, 'sfx', ['hit', 'block', 'slam', 'rope', 'slap', 'bell', 'crowd'], events),
       fx: recorder(fx, 'fx', ['shake', 'rope', 'flash'], events),
     });
-  } else match = new Match({ p1, p2, ref, staff, hud, sfx, fx });
-  ai = role ? null : new AI(p2, p1, 0.55);
+  } else match = new Match({ teams: T, ref, staff, props, hud, sfx, fx });
+  // il computer guida tutti tranne le persone (sull'ospite non serve: simula l'host)
+  ais = new Map();
+  if (role !== 'guest') for (const w of match.fighters) if (w !== p1 && !(role && w === p2)) ais.set(w, new AI(w, match, w.team === 0 ? 0.6 : 0.55));
   Object.assign(remote, blankIntent());
-  const tu = (w) => (mp && w === me ? `${w.name} (TU)` : w.name);
-  hud.setNames(tu(p1), tu(p2));
+  const tu = (w) => (w === me ? `${w.name} (TU)` : w.team === me.team ? `${w.name} (CPU)` : w.name);
+  hud.setNames(match.fighters.map(tu));
   hud.overlay('');
   hud.show(true);
   endShown = mpMenu = false;
   mode = 'play';
-  if (import.meta.env.DEV) window.bwt = { match, p1, p2, ref, ai, staff, mp };
+  if (import.meta.env.DEV) window.bwt = { match, p1, p2, ref, ais, staff, mp, props };
 }
 
 // ---------- multiplayer ----------
 // L'host (chi crea la stanza) guida il lottatore rosso e simula l'incontro; l'ospite guida il blu,
 // invia i propri comandi e riceve lo stato 25 volte al secondo.
 const net = new Net();
-let mp = null;          // { role: 'host' | 'guest', room, picks: [host, ospite], guest: ospite presente, away: ospite disconnesso }
+let mp = null;          // { role: 'host' | 'guest', room, size, picks: [[host, compagno?], [ospite, compagno?]], guest: ospite presente, away: ospite disconnesso }
 const remote = blankIntent();   // comandi dell'ospite (sull'host)
 const events = [];              // eventi da inviare all'ospite con il prossimo stato
 let lastSnap = 0, lastUp = 0, upBits = 0;
@@ -226,7 +248,7 @@ function onlineMenu(err = '') {
   mode = 'online';
   hud.show(false);
   hud.overlay(`<div class="mp">
-    <h1>BWT</h1><h2>Partita online</h2>
+    ${LOGO}<h2>Partita online</h2>
     <p><button class="btn big" data-act="create">Crea una stanza e invita un amico</button></p>
     <p>oppure entra con il codice che hai ricevuto</p>
     <form class="join" data-form="join">
@@ -241,7 +263,7 @@ function onlineMenu(err = '') {
 function waiting(text) {
   mode = 'online';
   hud.show(false);
-  hud.overlay(`<div class="mp"><h1>BWT</h1><h2>Partita online</h2><p class="blink">${esc(text)}</p></div>`);
+  hud.overlay(`<div class="mp">${LOGO}<h2>Partita online</h2><p class="blink">${esc(text)}</p></div>`);
 }
 
 async function createRoom() {
@@ -256,7 +278,8 @@ async function joinRoom(code) {
   try { await net.join(code); } catch (e) { onlineMenu(e.message); }
 }
 
-const newMp = (role, room) => ({ role, room, picks: [null, null], guest: role === 'guest', away: false });
+const newMp = (role, room) => ({ role, room, size: 1, picks: [[], []], guest: role === 'guest', away: false });
+const full = (l) => l.length === mp.size;
 
 function openLobby() {
   mode = 'lobby';
@@ -271,10 +294,12 @@ function openLobby() {
 let staged = '';
 function renderLobby() {
   if (mode !== 'lobby' || !mp) return;
-  // sul ring i lottatori scelti (o due a caso finché non si sceglie)
+  // sul ring i lottatori scelti (o i primi liberi finché non si sceglie)
   const [hp, gp] = mp.picks;
-  const a = hp ?? (gp === 0 ? 1 : 0), b = gp ?? (a === 1 ? 0 : 1);
-  if (staged !== `${a}-${b}`) { staged = `${a}-${b}`; stage(a, b); }
+  const free = ROSTER.map((_, i) => i).filter((i) => !hp.includes(i) && !gp.includes(i));
+  const fill = (l) => [...l, ...free.splice(0, Math.max(0, mp.size - l.length))].slice(0, mp.size);
+  const T = [fill(hp), fill(gp)];
+  if (staged !== JSON.stringify(T)) { staged = JSON.stringify(T); stage(T); }
 
   const host = mp.role === 'host';
   const mine = host ? hp : gp, theirs = host ? gp : hp;
@@ -286,22 +311,25 @@ function renderLobby() {
       <a class="btn wa" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">WhatsApp</a>
       ${navigator.share ? '<button class="btn" data-act="share">Condividi</button>' : ''}
     </div>` : '';
-  const who = (i) => esc(ROSTER[i].name);
+  const who = (l) => l.map((i) => `<b>${esc(ROSTER[i].name)}</b>`).join(' e ');
+  const what = mp.size === 2 ? 'i lottatori' : 'il lottatore';
   const status = host
     ? (!mp.guest ? "In attesa che il tuo amico usi l'invito…"
       : mp.away ? 'Il tuo amico si è disconnesso: attendo che rientri…'
-        : theirs == null ? 'Il tuo amico è nella stanza e sta scegliendo il lottatore…' : `Il tuo amico ha scelto <b>${who(theirs)}</b>.`)
-    : (theirs == null ? "L'host sta scegliendo il lottatore…" : `L'host ha scelto <b>${who(theirs)}</b>.`);
-  const ready = host && mp.guest && !mp.away && hp != null && gp != null;
+        : !full(theirs) ? `Il tuo amico è nella stanza e sta scegliendo ${what}…` : `Il tuo amico ha scelto ${who(theirs)}.`)
+    : (!full(theirs) ? `L'host sta scegliendo ${what}…` : `L'host ha scelto ${who(theirs)}.`);
+  const ready = host && mp.guest && !mp.away && full(hp) && full(gp);
+  const ask = mp.size === 2 ? (mine.length ? 'il tuo compagno (lo guida il computer)' : 'il tuo lottatore') : 'il tuo lottatore';
   const action = host
     ? `<button class="btn big" data-act="start" ${ready ? '' : 'disabled'}>Inizia l'incontro <kbd>INVIO</kbd></button>`
-    : `<p class="blink">${mine == null ? `Scegli il tuo lottatore: 1–${ROSTER.length}` : "In attesa che l'host inizi l'incontro…"}</p>`;
+    : `<p class="blink">${!full(mine) ? `Scegli ${ask}: 1–${ROSTER.length}` : "In attesa che l'host inizi l'incontro…"}</p>`;
+  const tag = (i) => (mine.includes(i) ? `<em>${mine.indexOf(i) ? 'COMPAGNO' : 'TU'}</em>` : theirs.includes(i) ? '<em>AVVERSARIO</em>' : '');
   hud.overlay(`<div class="mp">
     <h2>Stanza <b class="code">${esc(mp.room)}</b></h2>
     ${invite}
-    <p>${mine == null ? 'Scegli il tuo lottatore' : `Tu sei <b>${who(mine)}</b> (${host ? 'angolo rosso' : 'angolo blu'})`} · ${status}</p>
-    <div class="pick">${ROSTER.map((r, i) => card(r, i, i === mine ? 'picked' : i === theirs ? 'taken' : '',
-      i === theirs ? '<em>AVVERSARIO</em>' : '')).join('')}</div>
+    ${host ? sizeToggle(mp.size, 'mpsize') : `<p>Incontro <b>${mp.size} contro ${mp.size}</b></p>`}
+    <p>${!full(mine) ? `Scegli ${ask}` : `Tu sei ${who(mine)} (${host ? 'angolo rosso' : 'angolo blu'})`} · ${status}</p>
+    <div class="pick">${ROSTER.map((r, i) => card(r, i, mine.includes(i) ? 'picked' : theirs.includes(i) ? 'taken' : '', tag(i))).join('')}</div>
     ${action}
     <p><button class="btn ghost" data-act="leave">Esci dalla stanza</button></p>
   </div>`);
@@ -312,24 +340,38 @@ const inviteText = () => `Sfidami a BWT, Bologna Wrestling Team! Codice stanza: 
 // l'host tiene lo stato della stanza e lo inoltra all'ospite
 function syncLobby() {
   if (!mp || mp.role !== 'host') return;
-  net.down({ k: 'lobby', picks: mp.picks });
+  net.down({ k: 'lobby', picks: mp.picks, size: mp.size });
   renderLobby();
+}
+
+// scelta nella stanza: si aggiunge alla propria squadra; toccando un proprio lottatore lo si toglie
+function choose(list, other, i, size) {
+  if (other.includes(i)) return list;   // già preso dall'avversario
+  if (list.includes(i)) return list.filter((x) => x !== i);
+  return list.length < size ? [...list, i] : [...list.slice(0, size - 1), i];
 }
 
 function lobbyPick(i) {
   if (!mp || i < 0 || i >= ROSTER.length) return;
   const host = mp.role === 'host';
-  if (i === mp.picks[host ? 1 : 0]) return;   // già preso dall'avversario
-  if (host) { mp.picks[0] = i; syncLobby(); }
-  else { mp.picks[1] = i; net.up({ k: 'pick', i }); renderLobby(); }
+  const k = host ? 0 : 1;
+  mp.picks[k] = choose(mp.picks[k], mp.picks[1 - k], i, mp.size);
+  if (host) syncLobby();
+  else { net.up({ k: 'pick', l: mp.picks[1] }); renderLobby(); }
+}
+
+function setLobbySize(n) {
+  if (!mp || mp.role !== 'host' || mp.size === n) return;
+  mp.size = n;
+  mp.picks = mp.picks.map((l) => l.slice(0, n));
+  syncLobby();
 }
 
 function hostStart() {
-  const [a, b] = mp.picks;
-  if (!mp.guest || mp.away || a == null || b == null) return;
+  if (!mp.guest || mp.away || !full(mp.picks[0]) || !full(mp.picks[1])) return;
   net.lock(true);
-  net.down({ k: 'start', a, b });
-  startMatch(a, b);
+  net.down({ k: 'start', teams: mp.picks });
+  startMatch(mp.picks);
 }
 
 // l'host torna alla stanza (cambio lottatori); l'ospite lo segue
@@ -381,7 +423,7 @@ net.on('host-left', () => {
 // sull'host: arrivo e uscita dell'ospite
 net.on('peer-join', (m) => {
   if (!mp || mp.role !== 'host') return;
-  if (!m.rejoin) mp.picks[1] = null;
+  if (!m.rejoin) mp.picks[1] = [];
   mp.guest = true;
   mp.away = false;
   setNote('');
@@ -397,7 +439,7 @@ net.on('peer-leave', (m) => {
     return;
   }
   mp.guest = mp.away = false;
-  mp.picks[1] = null;
+  mp.picks[1] = [];
   if (inMatch()) hostBackToLobby('Il tuo amico ha lasciato la partita.');
   else { setNote(''); syncLobby(); }
 });
@@ -408,11 +450,11 @@ net.on('up', (m) => {
   const d = m.d || {};
   if (d.k === 'i' && Array.isArray(d.i)) { if (inMatch()) mergeIntent(remote, d.i); }
   else if (d.k === 'pick' && mode === 'lobby') {
-    const i = d.i | 0;
-    if (i >= 0 && i < ROSTER.length && i !== mp.picks[0]) mp.picks[1] = i;
+    const l = Array.isArray(d.l) ? [...new Set(d.l.map((x) => x | 0))] : [];
+    if (l.length <= mp.size && l.every((i) => i >= 0 && i < ROSTER.length && !mp.picks[0].includes(i))) mp.picks[1] = l;
     syncLobby();
   } else if (d.k === 'hello') {
-    if (inMatch()) net.down({ k: 'start', a: mp.picks[0], b: mp.picks[1] }, m.from);
+    if (inMatch()) net.down({ k: 'start', teams: mp.picks }, m.from);
     else syncLobby();
   }
 });
@@ -423,12 +465,14 @@ net.on('down', ({ d }) => {
   switch (d.k) {
     case 'lobby':
       mp.picks = d.picks;
+      mp.size = d.size;
       if (mode !== 'lobby') openLobby();
       else renderLobby();
       break;
     case 'start':
-      mp.picks = [d.a, d.b];
-      startMatch(d.a, d.b);
+      mp.picks = d.teams;
+      mp.size = d.teams[0].length;
+      startMatch(d.teams);
       break;
     case 's':
       if (inMatch()) applySnapshot(match, d.s, { hud, sfx, fx });
@@ -464,6 +508,8 @@ hud.el.overlay.addEventListener('click', (e) => {
   }
   switch (el.dataset.act) {
     case 'online': onlineMenu(); break;
+    case 'size': setTitleSize(Number(el.dataset.size)); break;
+    case 'mpsize': setLobbySize(Number(el.dataset.size)); break;
     case 'title': toTitle(); break;
     case 'create': createRoom(); break;
     case 'start': hostStart(); break;
@@ -489,9 +535,26 @@ async function copyLink(btn) {
 // pulsante delle schermate che equivale a un tasto (tocco o clic)
 const keyBtn = (code, label, key, cls = '') => `<button class="btn ${cls}" data-key="${code}">${label} <kbd>${key}</kbd></button>`;
 
+function setTitleSize(n) {
+  teamSize = n;
+  picks = picks.slice(0, n === 1 ? 1 : picks.length);
+  titleNote = '';
+  hud.overlay(titleScreen());
+}
+
 function titlePick(n) {
-  if (pick == null || n === pick) { pick = n; titleNote = ''; hud.overlay(titleScreen()); }
-  else startMatch(pick, n);
+  if (picks.includes(n)) picks = picks.slice(0, picks.indexOf(n));   // ritocca la scelta
+  picks.push(n);
+  titleNote = '';
+  if (picks.length === teamSize * 2) startTitleMatch();
+  else hud.overlay(titleScreen());
+}
+
+// completa a caso le scelte mancanti e inizia
+function startTitleMatch() {
+  const free = ROSTER.map((_, i) => i).filter((i) => !picks.includes(i)).sort(() => Math.random() - 0.5);
+  while (picks.length < teamSize * 2) picks.push(free.pop());
+  startMatch([picks.slice(0, teamSize), picks.slice(teamSize)]);
 }
 
 // ---------- telecamera ----------
@@ -506,13 +569,18 @@ function updateCamera(dt, time) {
     camera.lookAt(0, MAT_Y + 0.8, 0);
     return;
   }
-  let mid = tmp.addVectors(p1.pos, p2.pos).multiplyScalar(0.5);
-  let sep = p1.pos.distanceTo(p2.pos);
+  // inquadra tutti i lottatori (anche fuori dal ring)
+  const F = match.fighters;
+  let mid = tmp.set(0, 0, 0);
+  for (const w of F) mid.add(w.pos);
+  mid.multiplyScalar(1 / F.length);
+  let sep = 0;
+  for (const w of F) sep = Math.max(sep, 2 * Math.hypot(w.pos.x - mid.x, w.pos.z - mid.z));
   // a fine incontro l'inquadratura segue il dirigente che sale sul ring
   if (match.outro?.step >= 2) { mid = tmp.copy(staff.boss.pos); sep = 2.5; }
   const k = 1 - Math.exp(-4 * dt);
-  camTarget.lerp(new THREE.Vector3(mid.x * 0.85, MAT_Y + 0.85, mid.z * 0.85), k);
-  const dist = 5.6 + sep * 0.55;
+  camTarget.lerp(new THREE.Vector3(mid.x * 0.85, Math.max(mid.y, 0.3) + 0.85, mid.z * 0.85), k);
+  const dist = 5.6 + sep * 0.55 + (F.some((w) => w.out) ? 1.2 : 0);   // fuori dal ring si allarga l'inquadratura
   const want = new THREE.Vector3(camTarget.x * 0.55, camTarget.y + dist * 0.55, camTarget.z + dist);
   camera.position.lerp(want, 1 - Math.exp(-3 * dt));
   camera.lookAt(camTarget);
@@ -535,12 +603,17 @@ function playStep(dt) {
       upBits = 0;
       lastUp = now;
     }
-    for (const w of [p1, p2, ref, staff.speaker, staff.boss]) { smoothFigure(w, dt); w.update(dt); }
-    hud.setBars(p1, p2);
+    for (const w of [...match.fighters, ref, staff.speaker, staff.boss]) { smoothFigure(w, dt); w.update(dt); }
+    props.update(dt);
+    hud.setBars(match.fighters);
   } else {
-    const i1 = match.phase === 'over' || mpMenu ? blankIntent() : controls.intent();
-    const i2 = mp ? remote : match.phase === 'fight' ? ai.intent(dt) : blankIntent();
-    match.update(dt, i1, i2);
+    const mine = match.phase === 'over' || mpMenu ? blankIntent() : controls.intent();
+    // (sviluppo: window.bwtAuto fa giocare anche il proprio lottatore al computer)
+    if (import.meta.env.DEV && window.bwtAuto && !ais.has(p1)) ais.set(p1, new AI(p1, match, 0.6));
+    const auto = import.meta.env.DEV && window.bwtAuto;
+    const intents = match.fighters.map((w) => (w === p1 && !auto ? mine : mp && w === p2 ? remote
+      : match.phase === 'fight' ? ais.get(w).intent(dt) : blankIntent()));
+    match.update(dt, intents);
     if (mp) {
       clearPresses(remote);   // i tasti premuti dall'ospite valgono una volta sola
       if (now - lastSnap > 40) {
@@ -550,7 +623,7 @@ function playStep(dt) {
       }
     }
   }
-  hud.prompt(match.promptFor(me, me === p1 ? p2 : p1));
+  hud.prompt(match.promptFor(me));
   hud.touchContext(me.state === 'hold', me.special >= 100);
 }
 
@@ -564,12 +637,14 @@ function endStep() {
   const host = mp?.role === 'host', guest = mp?.role === 'guest';
   if (!endShown && !mpMenu) {
     endShown = true;
-    const won = match.winner === me;
+    const won = match.winTeam === me.team;
+    const how = match.howWon === 'countout' ? 'per count-out' : 'per schienamento';
+    const winners = match.tag ? match.teams[match.winTeam].map((w) => w.name).join(' e ') : match.winner.name;
     const buttons = guest
       ? `<p class="blink">L'host decide la rivincita</p><p>${keyBtn('KeyQ', 'Esci dalla stanza', 'Q', 'ghost')}</p>`
       : `<p>${keyBtn('Enter', 'Rivincita', 'INVIO', 'big')} ${keyBtn('KeyQ', host ? 'Torna alla stanza' : 'Menu', 'Q', 'ghost')}</p>`;
     hud.overlay(`<div><div class="winner">${won ? 'HAI VINTO!' : 'HAI PERSO!'}</div>
-      <p>${esc(staff.speaker.name)}: «Vince per schienamento… <b>${esc(match.winner.name)}</b>!»</p>
+      <p>${esc(staff.speaker.name)}: «${match.tag ? 'Vincono' : 'Vince'} ${how}… <b>${esc(winners)}</b>!»</p>
       ${buttons}</div>`);
   }
   if (!guest && controls.wasPressed('Enter', 'NumpadEnter')) { hud.overlay(''); endShown = false; match.reset(); }
@@ -607,12 +682,10 @@ function step() {
     const n = pressedPick();
     if (n >= 0) titlePick(n);
     else if (controls.wasPressed('KeyM')) onlineMenu();
-    else if (pick != null) {
-      if (controls.wasPressed('Enter', 'NumpadEnter')) {
-        let opp;
-        do opp = (Math.random() * ROSTER.length) | 0; while (opp === pick);
-        startMatch(pick, opp);
-      } else if (controls.wasPressed('Escape', 'Backspace')) { pick = null; hud.overlay(titleScreen()); }
+    else if (controls.wasPressed('KeyT')) setTitleSize(teamSize === 1 ? 2 : 1);
+    else if (picks.length) {
+      if (controls.wasPressed('Enter', 'NumpadEnter')) startTitleMatch();
+      else if (controls.wasPressed('Escape', 'Backspace')) { picks.pop(); hud.overlay(titleScreen()); }
     }
   } else if (mode === 'online') {
     if (controls.wasPressed('Escape') && !mp) toTitle();
@@ -620,18 +693,19 @@ function step() {
     const n = pressedPick();
     if (n >= 0) lobbyPick(n);
     else if (mp?.role === 'host' && controls.wasPressed('Enter', 'NumpadEnter')) hostStart();
+    else if (mp?.role === 'host' && controls.wasPressed('KeyT')) setLobbySize(mp.size === 1 ? 2 : 1);
   } else if (mode === 'play') {
     if (controls.wasPressed('Escape', 'KeyP')) {
       if (mp) {
         // online la partita non si ferma: il menu resta sopra il gioco
         mpMenu = !mpMenu;
-        hud.overlay(mpMenu ? `<div><h1>BWT</h1><h2>Partita online</h2>
+        hud.overlay(mpMenu ? `<div>${LOGO}<h2>Partita online</h2>
           <p>L'incontro continua anche con il menu aperto.</p>
           <p>${keyBtn('Escape', 'Torna a combattere', 'Esc', 'big')} ${keyBtn('KeyQ', mp.role === 'host' ? 'Torna alla stanza' : 'Esci dalla stanza', 'Q', 'ghost')}</p></div>` : '');
         if (!mpMenu) endShown = false;
       } else {
         mode = 'paused';
-        hud.overlay(`<div><h1>BWT</h1><h2>Pausa</h2><p>${keyBtn('Escape', 'Riprendi', 'Esc', 'big')} ${keyBtn('KeyQ', 'Menu', 'Q', 'ghost')}</p></div>`);
+        hud.overlay(`<div>${LOGO}<h2>Pausa</h2><p>${keyBtn('Escape', 'Riprendi', 'Esc', 'big')} ${keyBtn('KeyQ', 'Menu', 'Q', 'ghost')}</p></div>`);
       }
     } else if (mpMenu && controls.wasPressed('KeyQ')) {
       if (mp.role === 'host') hostBackToLobby(); else quitOnline();

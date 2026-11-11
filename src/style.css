@@ -31,12 +31,19 @@ html, body { margin: 0; height: 100%; overflow: hidden; touch-action: none; -web
 .bar.sp span { position: absolute; top: -1px; left: 6px; font: 800 7px/9px system-ui; letter-spacing: 2px; color: #fff9; }
 .panel.right .bar.sp span { left: auto; right: 6px; }
 @keyframes glow { to { filter: brightness(1.5); } }
-.logo { font: 900 28px/1 "Arial Black", system-ui, sans-serif; padding: 6px 12px; border-radius: 6px;
-  background: linear-gradient(90deg, var(--red) 50%, var(--blue) 50%); text-shadow: 0 2px 0 #0008; letter-spacing: 2px; }
+.mate { display: flex; align-items: center; gap: 8px; margin-top: 6px; font: 800 12px system-ui; text-shadow: 0 1px 2px #000; }
+.mate span { white-space: nowrap; }
+.mate .bar.hp { flex: 1; height: 8px; }
+.panel.right .mate { flex-direction: row-reverse; }
+#ringout { position: fixed; top: 92px; left: 50%; transform: translateX(-50%); pointer-events: none; padding: 4px 14px; border-radius: 6px;
+  background: #000a; font: 900 18px "Arial Black", system-ui, sans-serif; color: #fff; letter-spacing: 2px; }
+.logo { padding: 4px 10px; border-radius: 8px; background: linear-gradient(90deg, var(--red) 50%, var(--blue) 50%); line-height: 0; }
+.logo img { height: 40px; filter: drop-shadow(0 2px 0 #0008); }
 
 /* scritte al centro */
 #announce, #count { position: fixed; left: 50%; pointer-events: none; transform: translateX(-50%); text-align: center; white-space: nowrap;
   font-family: "Arial Black", system-ui, sans-serif; font-weight: 900; opacity: 0; }
+#announce.long { font-size: clamp(18px, 3.4vw, 38px); }
 #announce { top: 22%; font-size: clamp(28px, 6vw, 64px); color: var(--gold);
   -webkit-text-stroke: 2px #000; text-shadow: 0 4px 0 var(--red), 0 8px 20px #000c; }
 #announce.blue { color: #8fd0ff; text-shadow: 0 4px 0 var(--blue), 0 8px 20px #000c; }
@@ -65,9 +72,8 @@ kbd { display: inline-block; padding: 0 5px; border-radius: 3px; background: #ff
 /* schermate */
 #overlay { position: fixed; inset: 0; display: grid; place-items: safe center; overflow-y: auto; touch-action: pan-y; background: radial-gradient(#0b0b1499, #0b0b14ee); text-align: center; padding: 16px; }
 #overlay:empty { display: none; }
-#overlay h1 { margin: 0; font: 900 clamp(64px, 16vw, 150px)/0.9 "Arial Black", system-ui, sans-serif; letter-spacing: 6px;
-  background: linear-gradient(90deg, var(--red) 50%, var(--blue) 50%); -webkit-background-clip: text; background-clip: text; color: transparent;
-  -webkit-text-stroke: 2px #fff; filter: drop-shadow(0 6px 0 #000); }
+#overlay h1 { margin: 0; line-height: 0; }
+#overlay h1 img { height: clamp(90px, 20vw, 180px); filter: drop-shadow(-5px 0 0 var(--red)) drop-shadow(5px 0 0 var(--blue)) drop-shadow(0 6px 0 #000); }
 #overlay h2 { margin: 6px 0 22px; font: 800 clamp(16px, 3vw, 24px) system-ui; letter-spacing: 6px; text-transform: uppercase; }
 #overlay p { margin: 8px 0; font-size: 17px; }
 #overlay .pick { display: flex; gap: 16px; justify-content: center; margin: 18px 0; flex-wrap: wrap; }
@@ -97,6 +103,10 @@ kbd { display: inline-block; padding: 0 5px; border-radius: 3px; background: #ff
 #overlay .card { cursor: pointer; }
 #overlay .card.taken { opacity: .45; cursor: default; border-color: #8fb3ff; }
 #overlay .card em { display: block; font: 800 10px system-ui; letter-spacing: 2px; color: #8fb3ff; font-style: normal; }
+#overlay .card.picked em { color: var(--gold); }
+#overlay .modes { display: flex; gap: 8px; justify-content: center; align-items: center; margin: 4px 0; }
+#overlay .modes .btn { opacity: .6; }
+#overlay .modes .btn.on { opacity: 1; border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold) inset; }
 #overlay .err { color: #ff8a8a; font-weight: 700; min-height: 1.2em; }
 #overlay .mp h2 .code { font-family: ui-monospace, monospace; color: var(--gold); letter-spacing: 6px; }
 #overlay .invite { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin: 4px 0 10px; }
@@ -152,19 +162,19 @@ kbd { display: inline-block; padding: 0 5px; border-radius: 3px; background: #ff
 }
 /* schermi bassi (telefono in orizzontale): schermate più compatte */
 @media (max-height: 500px) {
-  #overlay h1 { font-size: 52px; letter-spacing: 3px; }
+  #overlay h1 img { height: 64px; }
   #overlay h2 { margin: 2px 0 8px; font-size: 14px; }
   #overlay p { margin: 5px 0; font-size: 14px; }
   #overlay .pick { margin: 8px 0; gap: 6px; }
   #overlay { padding: 8px 16px; }
   #overlay .pick { flex-wrap: nowrap; }
-  #overlay .card { width: min(104px, calc((100vw - 70px) / 7)); padding: 4px; }
+  #overlay .card { width: min(104px, calc((100vw - 70px) / 8)); padding: 4px; }
   #overlay .card b { font-size: 11px; }
   #overlay .card kbd, #overlay .card small { display: none; }
   #overlay .card img { aspect-ratio: 4 / 5; height: auto; margin-bottom: 3px; }
   .btn { padding: 7px 12px; font-size: 13px; }
   .btn.big { font-size: 15px; padding: 9px 16px; }
   .name { font-size: 15px; }
-  .logo { font-size: 20px; padding: 4px 8px; }
+  .logo img { height: 28px; }
   .bar { height: 12px; }
 }

@@ -20,7 +20,12 @@ EYES = {
     'trucker': (141, 48, 26), 'guido': (135.5, 58, 19), 'nico': (138, 58, 22), 'jason': (130, 56, 25),
     'dozer': (131.5, 67, 13), 'zodiac': (147, 66, 20), 'lello': (138, 52, 22),
     'malpensa': (91, 80, 30), 'rangoni': (129, 32, 13),
+    'mosquito': (147.5, 196, 75),   # maschera: centri dei fori degli occhi
 }
+# volti coperti da una maschera: la tinta della pelle si prende da questo riquadro (petto) invece che da fronte e guance
+SKIN_BOX = {'mosquito': (95, 440, 185, 500)}
+# volto ingrandito sul modello (il disegno della maschera copre tutta la testa)
+FACE_SCALE = {'mosquito': 1.4}
 # sopracciglia folte o espressione accigliata: sul modello diventano strisce scure, si schiariscono verso la pelle (0..1)
 SOFT_BROWS = {'jason': 0.7, 'zodiac': 0.65}
 # ritaglio in multipli della distanza tra le pupille (stessi valori nello shader: FACE_W, FACE_H, FACE_EYE)
@@ -78,6 +83,8 @@ def main():
         samples = [mean_rgb(im, (round(ex - 0.4 * d), round(ey - 0.75 * d), round(ex + 0.4 * d), round(ey - 0.45 * d))),
                    mean_rgb(im, (round(ex - 0.75 * d), round(ey + 0.35 * d), round(ex - 0.4 * d), round(ey + 0.7 * d))),
                    mean_rgb(im, (round(ex + 0.4 * d), round(ey + 0.35 * d), round(ex + 0.75 * d), round(ey + 0.7 * d)))]
+        if name in SKIN_BOX:
+            samples = [mean_rgb(im, SKIN_BOX[name])]
         samples = [s for s in samples if s]
         skin = [sum(s[i] for s in samples) / len(samples) for i in range(3)]
         # foto scure (luci di scena): si schiarisce il viso fino a una luminosità standard
@@ -85,6 +92,14 @@ def main():
         if gain > 1.01:
             face = face.point(lambda v: min(255, round(v * gain)))
             skin = [min(255, c * gain) for c in skin]
+        if name in SKIN_BOX:
+            # maschera: lo sfondo arancione che spunta ai bordi diventa nero come la maschera
+            px = face.load()
+            for y in range(H):
+                for x in range(W):
+                    r, g, b = px[x, y]
+                    if r - b > 70:
+                        px[x, y] = (12, 12, 14)
         if name in SOFT_BROWS:
             soften_brows(face, skin, SOFT_BROWS[name])
         face.putalpha(mask)
@@ -93,6 +108,8 @@ def main():
         tint = [skin[i] / tex_mean[i] for i in range(3)]
         top = max(tint)
         info[name] = {'skinTint': '#%02x%02x%02x' % tuple(round(t / top * 255) for t in tint)}
+        if name in FACE_SCALE:
+            info[name]['scale'] = FACE_SCALE[name]
         print(name, src.name, 'pelle', [round(v) for v in skin], info[name]['skinTint'])
     (OUT / 'volti.json').write_text(json.dumps(info, indent=1))
 

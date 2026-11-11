@@ -134,6 +134,54 @@ export async function loadWrestlerModels() {
   };
 }
 
+// capelli lunghi: le ciocche che pendono davanti agli occhi sembrerebbero sopracciglia enormi sul volto della foto,
+// si tagliano (coordinate di riposo del modello: occhi a circa 1.68 m, davanti z > 0)
+// cut: altezza sotto la quale i capelli si tagliano (capelli "medi", fino al mento)
+function trimBangs(m, cut = 0) {
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHairP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHairP = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vHairP;')
+      .replace('void main() {', `void main() {\n  if ((vHairP.z > 0.01 && abs(vHairP.x) < 0.098 && vHairP.y < 1.75) || vHairP.y < ${cut.toFixed(3)}) discard;`);
+  };
+  m.customProgramCacheKey = () => `bwt-hair-long-${cut}`;
+}
+
+// fascia sulla fronte (Guido), con l'origine sulla linea degli occhi
+function headband(color) {
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.092, 0.095, 0.022, 32, 1, true),
+    new THREE.MeshStandardMaterial({ color, metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide }));
+  band.rotation.x = -0.3;   // più bassa davanti, sulla fronte
+  band.scale.set(0.86, 1, 1.1);
+  band.position.set(0, 0.05, -0.012);
+  band.castShadow = true;
+  return band;
+}
+
+// antenne da zanzara (El Mosquito): due steli curvi che partono dalla fronte, con l'origine sulla linea degli occhi
+function antennae(color) {
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5, emissive: color, emissiveIntensity: 0.15 });
+  const g = new THREE.Group();
+  for (const s of [-1, 1]) {
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(s * 0.035, 0.07, 0.075), new THREE.Vector3(s * 0.05, 0.11, 0.075),
+      new THREE.Vector3(s * 0.075, 0.145, 0.09), new THREE.Vector3(s * 0.105, 0.16, 0.115),
+    ]);
+    const stem = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.006, 6), mat);
+    stem.castShadow = true;
+    g.add(stem);
+    // perline lungo lo stelo, come nella maschera vera
+    for (let k = 0.4; k <= 1.001; k += 0.2) {
+      const bead = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), mat);
+      bead.position.copy(curve.getPoint(k));
+      g.add(bead);
+    }
+  }
+  return g;
+}
+
 // cappello da cowboy (misure in metri, con l'origine sulla linea degli occhi)
 function cowboyHat(color) {
   const felt = new THREE.MeshStandardMaterial({ color, roughness: 0.85, side: THREE.DoubleSide });
@@ -187,6 +235,20 @@ export function buildFromWeight(kg, height, slim = false, lean = false) {
   };
 }
 
+// volto dalla foto, proiettato sul davanti della testa allineando gli occhi.
+// Senza maschera va sotto occhiali e cappellino; con la maschera va sopra (è il disegno della maschera stessa).
+const faceGLSL = (cond) => `
+  if (uFaceOn > 0.5 && ${cond} && p.y > yNeck) {
+    float ipd = 2.0 * uY2.z * uFaceScale;
+    vec2 fuv = vec2(0.5 + p.x / (${FACE_W.toFixed(2)} * ipd), ${(FACE_EYE / FACE_H).toFixed(4)} - (p.y - eyeY) / (${FACE_H.toFixed(2)} * ipd));
+    float front = smoothstep(0.1, 0.5, normalize(vRestN).z) * step(uHeadZ - 0.02, p.z);
+    if (front > 0.0 && fuv.x > 0.0 && fuv.x < 1.0 && fuv.y > 0.0 && fuv.y < 1.0) {
+      vec4 f = texture2D(uFace, vec2(fuv.x, 1.0 - fuv.y));
+      col = mix(col, f.rgb, f.a * front);
+      cloth *= 1.0 - f.a * front;
+    }
+  }`;
+
 function gearMaterial(src, models, look) {
   const m = src.clone();
   if (look.lightSkin) m.map = models.lightSkin;
@@ -235,6 +297,7 @@ function gearMaterial(src, models, look) {
     uArmDir: { value: armDir },
     uFace: { value: faceTex },
     uFaceOn: { value: faceTex ? 1 : 0 },
+    uFaceScale: { value: face?.scale ?? 1 },
   };
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
@@ -264,13 +327,14 @@ vRestN = uBasis * normal;
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
 varying vec3 vRest; varying vec3 vRestN;
-uniform sampler2D uFace; uniform float uFaceOn;
+uniform sampler2D uFace; uniform float uFaceOn; uniform float uFaceScale;
 uniform mat3 uBasis; uniform vec3 uTrunks; uniform vec3 uTrim; uniform vec3 uBoots; uniform vec3 uPads;
 uniform vec3 uTape; uniform vec3 uMask; uniform vec3 uMaskTrim; uniform vec3 uBeard; uniform vec3 uCap;
 uniform vec3 uTop; uniform vec3 uTop2; uniform vec3 uTop3; uniform vec4 uFlags; uniform vec4 uFlags2; uniform float uCapOn; uniform vec4 uExtra;
 uniform float uArmX; uniform float uHeadZ; uniform float uChest;
 uniform vec4 uY; uniform vec4 uY2; uniform vec3 uHand; uniform vec3 uArmDir;
 float cloth = 0.0;
+float shoe = 0.0;   // scarpe: nere e opache (sotto il faro il nero lucido sembrerebbe pelle)
 vec3 rainbow(float t) {
   int i = int(mod(floor(t), 6.0));
   if (i == 0) return vec3(0.9, 0.1, 0.1);
@@ -319,23 +383,33 @@ vec3 rainbow(float t) {
   float along = dot(hp, uArmDir);
   if (kind > 2.5) {
     // completo: giacca con maniche fino ai polsi, camicia e cravatta (uTop giacca, uTop2 camicia, uTop3 cravatta)
+    // pantaloni lunghi fino alle scarpe nere lucide
+    if (leg) {
+      col = uTrunks; cloth = 1.0;
+      if (p.y < yFoot + 0.025) { col = vec3(0.004); shoe = 1.0; }
+    }
     bool sleeve = ax > uArmX * 0.75 && along < -0.02;
-    bool torso = ax < uArmX * 1.05 && p.y > yPelvis - 0.12 && p.y < yNeck - 0.01;
+    float hem = yPelvis - 0.2;                                  // la giacca copre i fianchi
+    bool torso = ax < max(uArmX * 1.05, xThigh + 0.2) && p.y > hem && p.y < yNeck - 0.01 && (ax < uArmX * 1.05 || p.y < yPelvis);
     if (sleeve || torso) {
       col = uTop; cloth = 1.0;
-      float sy = uChest - 0.17;
-      float vee = 0.014 + (p.y - sy) * 0.34;                  // scollo della giacca
+      float sy = uChest - 0.2;
+      float vee = 0.02 + (p.y - sy) * 0.55;                     // scollo della giacca, ampio
       if (torso && p.z > 0.0 && p.y > sy && ax < vee) {
         col = uTop2;
-        if (ax < 0.016 + (p.y > yNeck - 0.05 ? 0.008 : 0.0)) {
-          col = uTop3;
-          if (uExtra.y > 0.5 && mod(floor((p.y - p.x) * 70.0), 2.0) < 1.0) col = mix(uTop3, vec3(0.85), 0.8);
+        if (p.y > yNeck - 0.045 && ax > 0.03) col = mix(uTop2, vec3(0.6), 0.25);   // colletto della camicia
+        float tie = 0.012 + (yNeck - p.y) * 0.08;
+        if (ax < tie || (p.y > yNeck - 0.04 && ax < 0.02)) {
+          col = uTop3;                                           // cravatta (nodo in alto)
+          if (uExtra.y > 0.5 && mod(floor((p.y - p.x) * 60.0), 2.0) < 1.0) col = mix(uTop3, vec3(0.9, 0.85, 0.75), 0.55);
         }
-      } else if (torso && p.z > 0.0 && p.y > sy - 0.02 && ax < vee + 0.03) {
-        col = mix(uTop, vec3(0.75), 0.18);                    // risvolti in raso
+      } else if (torso && p.z > 0.0 && p.y > sy - 0.03 && ax < vee + 0.045) {
+        col = uTop * 0.55;                                       // risvolti più scuri, ben visibili
       }
       if (torso && p.z > 0.0 && p.y < sy && ax < 0.004) col = uTop * 0.4;   // chiusura della giacca
-      if (torso && p.y < yPelvis - 0.105) col = uTop * 0.45;                 // orlo della giacca
+      // sotto l'ultimo bottone la giacca si apre: si vedono i pantaloni
+      if (torso && p.z > 0.0 && p.y < yPelvis - 0.04 && ax < (yPelvis - 0.04 - p.y) * 0.9) col = uTrunks;
+      if (torso && p.y < hem + 0.012) col = uTop * 0.45;                    // orlo della giacca
       if (torso && p.z > 0.02 && abs(ax - 0.09) < 0.035 && abs(p.y - (yPelvis + 0.03)) < 0.006) col = uTop * 0.45;   // tasche
       if (torso && p.z > 0.0 && p.y < sy && p.y > yPelvis - 0.02 && abs(ax - 0.008) < 0.007 && mod(p.y - sy, 0.07) < 0.014) col = vec3(0.04);   // bottoni
       if (torso && p.x > 0.05 && p.x < 0.1 && p.z > 0.0 && p.y > uChest - 0.02 && p.y < uChest + 0.01) col = uTop2;   // fazzoletto nel taschino
@@ -393,17 +467,7 @@ vec3 rainbow(float t) {
       col = uBeard * (0.85 + 0.3 * fract(sin(dot(p.xy * 400.0, vec2(12.9, 78.2))) * 43758.5)); cloth = 1.0;
     }
   }
-  // volto dalla foto, proiettato sul davanti della testa allineando gli occhi
-  if (uFaceOn > 0.5 && p.y > yNeck) {
-    float ipd = 2.0 * uY2.z;
-    vec2 fuv = vec2(0.5 + p.x / (${FACE_W.toFixed(2)} * ipd), ${(FACE_EYE / FACE_H).toFixed(4)} - (p.y - eyeY) / (${FACE_H.toFixed(2)} * ipd));
-    float front = smoothstep(0.1, 0.5, normalize(vRestN).z) * step(uHeadZ - 0.02, p.z);
-    if (front > 0.0 && fuv.x > 0.0 && fuv.x < 1.0 && fuv.y > 0.0 && fuv.y < 1.0) {
-      vec4 f = texture2D(uFace, vec2(fuv.x, 1.0 - fuv.y));
-      col = mix(col, f.rgb, f.a * front);
-      cloth *= 1.0 - f.a * front;
-    }
-  }
+  ${faceGLSL('uFlags.x < 0.5')}
   // occhiali: montatura sottile attorno agli occhi e ponte sul naso
   if (uExtra.x > 0.5 && p.z > uHeadZ) {
     float d = length(vec2((ax - uY2.z) / 0.036, (p.y - eyeY - 0.003) / 0.026));
@@ -415,12 +479,13 @@ vec3 rainbow(float t) {
   if (uFlags.x > 0.5 && p.y > yNeck + 0.015) {
     col = uMask; cloth = 1.0;
     float ex = abs(ax - uY2.z), ey = abs(p.y - eyeY);
-    if (p.z > 0.0 && ex < 0.034 && ey < 0.026) col = uMaskTrim;
-    if (ax < 0.012 && p.y > eyeY + 0.03) col = uMaskTrim;
+    if (uFaceOn < 0.5 && p.z > 0.0 && ex < 0.034 && ey < 0.026) col = uMaskTrim;
+    if (uFaceOn < 0.5 && ax < 0.012 && p.y > eyeY + 0.03) col = uMaskTrim;
   }
+  ${faceGLSL('uFlags.x > 0.5')}
   diffuseColor.rgb = col;
 }`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.45, cloth);');
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.45, cloth), 1.0, shoe);');
   };
   m.customProgramCacheKey = () => 'bwt-gear';
   return m;
@@ -449,6 +514,8 @@ export class WrestlerRig {
         if (look.mask || look.face) o.visible = false;
         o.material = o.material.clone();
         o.material.color = new THREE.Color(look.hair ?? '#222222');
+      } else if (look.mask && /eye/i.test(o.material?.name || '')) {
+        o.visible = false;   // occhi del modello: sotto la maschera si vede il disegno della foto
       }
     });
 
@@ -458,12 +525,13 @@ export class WrestlerRig {
 
     if (look.hairStyle != null && !look.mask) {
       const hair = new THREE.Group();
-      for (const i of look.hairStyle === 'lunghi' ? [0, 1] : [0]) hair.add(SkeletonUtils.clone(models.hairs[i]));
+      for (const i of look.hairStyle === 'corti' ? [0] : [0, 1]) hair.add(SkeletonUtils.clone(models.hairs[i]));
       hair.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = true;
         o.material = o.material.clone();
         o.material.color = new THREE.Color(look.hair);
+        if (/long/i.test(o.name)) trimBangs(o.material, look.hairStyle === 'medi' ? 1.62 : 0);
       });
       const holder = new THREE.Group();
       holder.matrixAutoUpdate = false;
@@ -481,6 +549,18 @@ export class WrestlerRig {
       frame.matrix.makeBasis(left, R.up, R.fwd).scale(new THREE.Vector3(R.k, R.k, R.k)).setPosition(R.pos);
       frame.matrix.premultiply(models.headRestInv);
       frame.add(cowboyHat(look.hat));
+      this.bones.Head?.add(frame);
+    }
+
+    if (look.antennae || look.headband) {
+      const R = models.hatRef;
+      const left = new THREE.Vector3().crossVectors(R.up, R.fwd).normalize();
+      const frame = new THREE.Group();
+      frame.matrixAutoUpdate = false;
+      frame.matrix.makeBasis(left, R.up, R.fwd).scale(new THREE.Vector3(R.k, R.k, R.k)).setPosition(R.pos);
+      frame.matrix.premultiply(models.headRestInv);
+      if (look.antennae) frame.add(antennae(look.antennae));
+      if (look.headband) frame.add(headband(look.headband));
       this.bones.Head?.add(frame);
     }
 

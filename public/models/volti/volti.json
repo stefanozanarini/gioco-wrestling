@@ -25,5 +25,9 @@
  },
  "rangoni": {
   "skinTint": "#e4fffa"
+ },
+ "mosquito": {
+  "skinTint": "#ede2ff",
+  "scale": 1.4
  }
 }

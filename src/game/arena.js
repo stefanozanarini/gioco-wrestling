@@ -7,14 +7,29 @@ const POST = 3.85;                       // distanza dei pali dal centro
 const ROPE_H = [0.52, 0.94, 1.36];       // altezze delle corde sopra il tappeto
 const ROPE_COLORS = [RED, '#f2f2f2', BLUE];
 
+// logo BWT (bianco su trasparente, da tools/logo-bwt.png): le texture che lo usano si ridisegnano appena è caricato
+const LOGO = new Image();
+const withLogo = [];
+LOGO.onload = () => { for (const redraw of withLogo) redraw(); };
+LOGO.src = './img/logo.png';
+
 function canvasTex(w, h, draw) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 8;
+  const paint = () => { draw(c.getContext('2d'), w, h); t.needsUpdate = true; };
+  paint();
+  withLogo.push(paint);
   return t;
+}
+
+// disegna il logo largo `width`, centrato in (x, y)
+function logoImage(g, x, y, width) {
+  if (!LOGO.complete || !LOGO.naturalWidth) return;
+  const h = width * LOGO.naturalHeight / LOGO.naturalWidth;
+  g.drawImage(LOGO, x - width / 2, y - h / 2, width, h);
 }
 
 function logo(g, x, y, r) {
@@ -23,11 +38,10 @@ function logo(g, x, y, r) {
   g.beginPath(); g.arc(0, 0, r, Math.PI / 2, Math.PI * 1.5); g.fillStyle = RED; g.fill();
   g.beginPath(); g.arc(0, 0, r, -Math.PI / 2, Math.PI / 2); g.fillStyle = BLUE; g.fill();
   g.lineWidth = r * 0.07; g.strokeStyle = '#fff'; g.beginPath(); g.arc(0, 0, r * 0.94, 0, Math.PI * 2); g.stroke();
+  logoImage(g, 0, -r * 0.1, r * 1.45);
   g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.font = `900 ${r * 0.62}px "Arial Black", system-ui, sans-serif`;
-  g.fillText('BWT', 0, -r * 0.05);
-  g.font = `800 ${r * 0.13}px system-ui, sans-serif`;
-  g.fillText('BOLOGNA WRESTLING TEAM', 0, r * 0.45);
+  g.font = `800 ${r * 0.11}px system-ui, sans-serif`;
+  g.fillText('BOLOGNA WRESTLING TEAM', 0, r * 0.66);
   g.restore();
 }
 
@@ -85,8 +99,7 @@ export function buildArena(scene) {
     g.fillStyle = grd; g.fillRect(0, 0, w, h);
     g.fillStyle = GOLD; g.fillRect(0, 0, w, 6); g.fillRect(0, h - 6, w, 6);
     g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.font = '900 64px "Arial Black", system-ui, sans-serif';
-    g.fillText('B W T', w * 0.2, h / 2);
+    logoImage(g, w * 0.2, h / 2, 130);
     g.font = '800 34px system-ui, sans-serif';
     g.fillText('BOLOGNA WRESTLING TEAM', w * 0.62, h / 2);
   });

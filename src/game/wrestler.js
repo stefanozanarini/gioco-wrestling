@@ -5,10 +5,16 @@ export const MAT_Y = 1.2;        // altezza del tappeto del ring
 export const RING_HALF = 3.45;   // metà lato utile del ring (dentro le corde)
 export const WALK_SPEED = 1.9;
 export const RUN_SPEED = 4.6;
+export const APRON = 4.1;        // bordo del ring (oltre c'è il pavimento)
+export const OUT_MIN = 4.4;      // fuori dal ring si resta almeno a questa distanza dal centro (lungo x o z)
+export const OUT_MAX = 7.2;      // transenne
 
-const FREE_STATES = new Set(['idle', 'walk', 'run', 'block']);
-const UNHITTABLE = new Set(['down', 'pinned', 'pinning', 'getup', 'thrown', 'lifting', 'held', 'hold', 'celebrate', 'refCount']);
-const FAST_STATES = new Set(['punch', 'kick', 'stomp', 'clothesline', 'block', 'grab']);
+// altezza del pavimento in un punto: tappeto del ring o pavimento dell'arena
+export const groundAt = (x, z) => (Math.abs(x) < APRON && Math.abs(z) < APRON ? MAT_Y : 0);
+
+const FREE_STATES = new Set(['idle', 'walk', 'run', 'block', 'carry']);
+const UNHITTABLE = new Set(['down', 'pinned', 'pinning', 'getup', 'thrown', 'lifting', 'held', 'hold', 'celebrate', 'refCount', 'ropes', 'flying']);
+const FAST_STATES = new Set(['punch', 'kick', 'stomp', 'clothesline', 'block', 'grab', 'swing']);
 
 export const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -68,6 +74,12 @@ export class Wrestler {
     this.forced = null;
     this.tiltX = 0;
     this.lift = 0;
+    this.out = false;       // fuori dal ring
+    this.outT = 0;          // da quanto è fuori (conteggio dell'arbitro)
+    this.pushT = 0;         // da quanto spinge contro le corde o il bordo del ring
+    this.carry = null;      // sedia in mano
+    this.held = null;       // avversario tenuto in presa
+    this.transit = null;    // passaggio tra le corde
     this.setState('idle');
   }
 
@@ -174,6 +186,28 @@ export class Wrestler {
         P.anim = 'sprint'; P.crouch = 0; P.rate = 22;
         P.aims = { ual: [1, 0.08, 0.2], fal: [1, 0.1, 0.25], spine: [0, 0.95, 0.3] };
         break;
+      case 'carry':
+        // sedia sollevata sopra la testa con due mani
+        if (spd > 0.3) {
+          P.anim = this.rig.has('camminata') ? 'camminata' : 'run';
+          P.speed = THREE.MathUtils.clamp(spd / (P.anim === 'run' ? 3.2 : 1.5), 0.6, 1.5);
+        }
+        P.crouch = 0;
+        P.aims = { ...ARMS([0.45, 0.85, 0.2], [-0.45, 0.85, 0.25]) };
+        break;
+      case 'swing': {
+        const p = t / (this.stateDur || 1);
+        P.crouch = 0.15; P.rate = 22;
+        P.aims = p < 0.32 ? { ...ARMS([0.35, 0.85, -0.35], [-0.35, 0.75, -0.5]), spine: [0, 0.97, -0.25] }
+          : { ...ARMS([0.25, 0.05, 1], [-0.25, -0.25, 0.95]), spine: [0, 0.8, 0.6] };
+        break;
+      }
+      case 'ropes':
+        // passa chinato tra la seconda e la terza corda
+        P.crouch = 0; P.rate = 10;
+        P.tiltX = -0.55; P.lift = this.LIFT_CROUCH * 0.7;
+        P.aims = { ...ARMS([0.4, -0.3, 0.85], [0.2, -0.5, 0.85]), spine: [0, 0.6, 0.8] };
+        break;
       case 'block':
         P.aims = { ...ARMS([0.3, -0.25, 0.92], [-0.55, 0.82, 0.15]), spine: [0, 0.95, 0.25] }; P.crouch = 0.38;
         break;
@@ -192,7 +226,7 @@ export class Wrestler {
       case 'lifting':
         P.aims = { ...ARMS([0.28, 0.95, 0.12], [0, 1, 0.05]), spine: [0, 0.98, -0.15] }; P.crouch = 0.22;
         break;
-      case 'thrown': {
+      case 'thrown': case 'flying': {
         const w = Math.sin(c * 13);
         P.aims = { ...ARMS([0.95, 0.3 + 0.3 * w, 0], [0.9, 0.4, 0.1]), ...LEGS([0.15, -0.9, 0.35 + 0.25 * w], [0.1, -0.95, 0.1]) };
         P.crouch = 0;

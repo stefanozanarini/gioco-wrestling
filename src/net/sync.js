@@ -41,7 +41,7 @@ function figure(w) {
   return [r3(w.pos.x), r3(w.pos.y), r3(w.pos.z), r3(w.facing), w.state, w.serial, r3(w.stateTime), r3(w.stateDur),
     r2(w.vel.x), r2(w.vel.z), w.hp, Math.round(w.special),
     f?.tiltX != null ? r3(f.tiltX) : null, f?.lift != null ? r3(f.lift) : null,
-    (w.knockAnim ? 1 : 0) | (w.getupAnim ? 2 : 0), w.attackSide, r2(w.slap)];
+    (w.knockAnim ? 1 : 0) | (w.getupAnim ? 2 : 0) | (w.out ? 4 : 0), w.attackSide, r2(w.slap)];
 }
 
 function applyFigure(w, a) {
@@ -51,6 +51,7 @@ function applyFigure(w, a) {
   w.stateDur = sd;
   w.knockAnim = !!(flags & 1);
   w.getupAnim = !!(flags & 2);
+  w.out = !!(flags & 4);
   w.vel.set(vx, 0, vz);
   w.hp = hp;
   w.special = special;
@@ -79,28 +80,35 @@ export function smoothFigure(w, dt) {
 }
 
 // ---------- incontro ----------
+// lottatori (nell'ordine di match.fighters), arbitro e staff
+const figures = (match) => [...match.fighters, match.ref, match.staff.speaker, match.staff.boss];
+
 export function snapshot(match, events) {
-  const { p1, p2, ref, staff, pin, outro } = match;
+  const { p2, pin, outro, fighters } = match;
   return {
-    f: [p1, p2, ref, staff.speaker, staff.boss].map(figure),
+    f: figures(match).map(figure),
     ph: match.phase,
     hy: r2(match.hype),
-    pv: pin ? (pin.v === p1 ? 1 : 2) : 0,
+    pv: pin ? fighters.indexOf(pin.v) + 1 : 0,
+    pa: pin ? fighters.indexOf(pin.a) : -1,
     kb: pin && pin.v === p2 && pin.refReady ? r2(pin.bar) : null,
     o: outro ? [outro.step, outro.done ? 1 : 0, outro.line] : null,
-    w: match.winner ? (match.winner === p1 ? 1 : 2) : 0,
+    w: match.winner ? [match.winTeam, fighters.indexOf(match.winner)] : null,
+    p: match.props.snapshot(fighters),
     e: events.splice(0),
   };
 }
 
 export function applySnapshot(match, s, { hud, sfx, fx }) {
-  const { p1, p2, ref, staff } = match;
-  [p1, p2, ref, staff.speaker, staff.boss].forEach((w, i) => s.f[i] && applyFigure(w, s.f[i]));
+  const { fighters } = match;
+  figures(match).forEach((w, i) => s.f[i] && applyFigure(w, s.f[i]));
   match.phase = s.ph;
   match.hype = s.hy;
-  match.pin = s.pv ? { v: s.pv === 1 ? p1 : p2 } : null;
+  match.pin = s.pv ? { v: fighters[s.pv - 1], a: fighters[s.pa] } : null;
   match.outro = s.o ? { step: s.o[0], done: !!s.o[1], line: s.o[2] } : null;
-  match.winner = s.w ? (s.w === 1 ? p1 : p2) : null;
+  match.winTeam = s.w ? s.w[0] : null;
+  match.winner = s.w ? fighters[s.w[1]] : null;
+  match.props.apply(s.p, fighters);
   hud.kickBar(s.kb);
   const targets = { hud, sfx, fx };
   for (const [name, method, ...args] of s.e || []) targets[name]?.[method]?.(...args);
